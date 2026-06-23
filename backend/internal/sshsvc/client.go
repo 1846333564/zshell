@@ -3,6 +3,8 @@ package sshsvc
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -69,9 +71,14 @@ func ExecCommand(conn model.Connection, command string, timeout time.Duration) (
 }
 
 func dial(conn model.Connection, timeout time.Duration) (*ssh.Client, error) {
+	auth, err := authMethods(conn)
+	if err != nil {
+		return nil, err
+	}
+
 	config := &ssh.ClientConfig{
 		User:            conn.Username,
-		Auth:            []ssh.AuthMethod{ssh.Password(conn.Password)},
+		Auth:            auth,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         timeout,
 	}
@@ -82,4 +89,39 @@ func dial(conn model.Connection, timeout time.Duration) (*ssh.Client, error) {
 	}
 
 	return client, nil
+}
+
+func authMethods(conn model.Connection) ([]ssh.AuthMethod, error) {
+	switch conn.AuthMethod {
+	case "", "password":
+		return []ssh.AuthMethod{ssh.Password(conn.Password)}, nil
+	case "id_rsa":
+		signer, err := loadDefaultIDRSA()
+		if err != nil {
+			return nil, err
+		}
+		return []ssh.AuthMethod{ssh.PublicKeys(signer)}, nil
+	default:
+		return nil, fmt.Errorf("unsupported auth method: %s", conn.AuthMethod)
+	}
+}
+
+func loadDefaultIDRSA() (ssh.Signer, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("resolve user home: %w", err)
+	}
+
+	keyPath := filepath.Join(home, ".ssh", "id_rsa")
+	keyBytes, err := os.ReadFile(keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("read private key %s: %w", keyPath, err)
+	}
+
+	signer, err := ssh.ParsePrivateKey(keyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse private key %s: %w", keyPath, err)
+	}
+
+	return signer, nil
 }

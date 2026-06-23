@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"path"
 	"strings"
@@ -39,15 +40,18 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/sftp/list", s.handleSFTPList)
 	mux.HandleFunc("/api/sftp/upload", s.handleSFTPUpload)
 	mux.HandleFunc("/api/sftp/download", s.handleSFTPDownload)
+	mux.HandleFunc("/api/sftp/archive", s.handleSFTPArchive)
+	mux.HandleFunc("/api/sftp/transfer", s.handleSFTPTransfer)
 	mux.Handle("/ws/terminal", s.terminalWS)
 }
 
 type createConnectionRequest struct {
-	Name     string `json:"name"`
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Name       string `json:"name"`
+	Host       string `json:"host"`
+	Port       int    `json:"port"`
+	Username   string `json:"username"`
+	Password   string `json:"password"`
+	AuthMethod string `json:"authMethod"`
 }
 
 type idRequest struct {
@@ -62,6 +66,14 @@ type execRequest struct {
 type sftpListRequest struct {
 	ConnectionID string `json:"connectionId"`
 	Path         string `json:"path"`
+}
+
+type sftpTransferRequest struct {
+	SourceConnectionID string                 `json:"sourceConnectionId"`
+	TargetConnectionID string                 `json:"targetConnectionId"`
+	TargetPath         string                 `json:"targetPath"`
+	Action             string                 `json:"action"`
+	Items              []sftpsvc.TransferItem `json:"items"`
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -95,13 +107,15 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 		if req.Port == 0 {
 			req.Port = 22
 		}
+		authMethod := normalizeAuthMethod(req.AuthMethod)
 
 		conn := model.Connection{
-			Name:     req.Name,
-			Host:     req.Host,
-			Port:     req.Port,
-			Username: req.Username,
-			Password: req.Password,
+			Name:       req.Name,
+			Host:       req.Host,
+			Port:       req.Port,
+			Username:   req.Username,
+			Password:   req.Password,
+			AuthMethod: authMethod,
 		}
 
 		created := s.store.Add(conn)
@@ -209,6 +223,9 @@ func (s *Server) handleSFTPUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("parse multipart: %v", err))
 		return
 	}
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
+	}
 
 	connectionID := strings.TrimSpace(r.FormValue("connectionId"))
 	remoteDir := strings.TrimSpace(r.FormValue("path"))
@@ -223,24 +240,30 @@ func (s *Server) handleSFTPUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "file is required")
+	files, directories := multipartUploadItems(r.MultipartForm)
+	if len(files) == 0 && len(directories) == 0 {
+		writeError(w, http.StatusBadRequest, "at least one file or directory is required")
 		return
 	}
-	defer file.Close()
 
-	remotePath, size, err := sftpsvc.UploadFile(conn, remoteDir, header.Filename, file, s.sshTimeout)
+	result, err := sftpsvc.UploadFiles(conn, remoteDir, files, directories, s.sshTimeout)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":         true,
-		"remotePath": remotePath,
-		"size":       size,
-	})
+	payload := map[string]any{
+		"ok":          result.OK,
+		"files":       result.Files,
+		"directories": result.Directories,
+		"totalSize":   result.TotalSize,
+	}
+	if len(result.Files) == 1 {
+		payload["remotePath"] = result.Files[0].RemotePath
+		payload["size"] = result.Files[0].Size
+	}
+
+	writeJSON(w, http.StatusOK, payload)
 }
 
 func (s *Server) handleSFTPDownload(w http.ResponseWriter, r *http.Request) {
@@ -276,6 +299,82 @@ func (s *Server) handleSFTPDownload(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(w, stream)
 }
 
+func (s *Server) handleSFTPArchive(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	connectionID := strings.TrimSpace(r.URL.Query().Get("connectionId"))
+	remotePaths := r.URL.Query()["path"]
+	if connectionID == "" || len(remotePaths) == 0 {
+		writeError(w, http.StatusBadRequest, "connectionId and at least one path are required")
+		return
+	}
+
+	conn, ok := s.store.Get(connectionID)
+	if !ok {
+		writeError(w, http.StatusNotFound, "connection not found")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", archiveName(remotePaths)))
+	if err := sftpsvc.ArchiveItems(conn, remotePaths, w, s.sshTimeout); err != nil {
+		return
+	}
+}
+
+func (s *Server) handleSFTPTransfer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req sftpTransferRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if strings.TrimSpace(req.SourceConnectionID) == "" || strings.TrimSpace(req.TargetConnectionID) == "" {
+		writeError(w, http.StatusBadRequest, "sourceConnectionId and targetConnectionId are required")
+		return
+	}
+	if strings.TrimSpace(req.TargetPath) == "" {
+		writeError(w, http.StatusBadRequest, "targetPath is required")
+		return
+	}
+	if len(req.Items) == 0 {
+		writeError(w, http.StatusBadRequest, "items are required")
+		return
+	}
+
+	sourceConn, ok := s.store.Get(req.SourceConnectionID)
+	if !ok {
+		writeError(w, http.StatusNotFound, "source connection not found")
+		return
+	}
+	targetConn, ok := s.store.Get(req.TargetConnectionID)
+	if !ok {
+		writeError(w, http.StatusNotFound, "target connection not found")
+		return
+	}
+
+	action := strings.ToLower(strings.TrimSpace(req.Action))
+	if action == "" {
+		action = "copy"
+	}
+
+	result, err := sftpsvc.TransferItems(sourceConn, targetConn, req.TargetPath, req.Items, action, s.sshTimeout)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
 func validateConnectionRequest(req createConnectionRequest) error {
 	if strings.TrimSpace(req.Name) == "" {
 		return errors.New("name is required")
@@ -289,10 +388,61 @@ func validateConnectionRequest(req createConnectionRequest) error {
 	if strings.TrimSpace(req.Username) == "" {
 		return errors.New("username is required")
 	}
-	if strings.TrimSpace(req.Password) == "" {
+	authMethod := normalizeAuthMethod(req.AuthMethod)
+	if authMethod != "password" && authMethod != "id_rsa" {
+		return errors.New("authMethod must be password or id_rsa")
+	}
+	if authMethod == "password" && strings.TrimSpace(req.Password) == "" {
 		return errors.New("password is required")
 	}
 	return nil
+}
+
+func normalizeAuthMethod(value string) string {
+	authMethod := strings.ToLower(strings.TrimSpace(value))
+	if authMethod == "" {
+		return "password"
+	}
+	return authMethod
+}
+
+func multipartUploadItems(form *multipart.Form) ([]sftpsvc.UploadItem, []string) {
+	if form == nil {
+		return nil, nil
+	}
+
+	fileHeaders := make([]*multipart.FileHeader, 0)
+	fileHeaders = append(fileHeaders, form.File["files"]...)
+	fileHeaders = append(fileHeaders, form.File["file"]...)
+
+	relativePaths := form.Value["relativePaths"]
+	files := make([]sftpsvc.UploadItem, 0, len(fileHeaders))
+	for index, header := range fileHeaders {
+		header := header
+		relativePath := ""
+		if index < len(relativePaths) {
+			relativePath = relativePaths[index]
+		}
+		files = append(files, sftpsvc.UploadItem{
+			FileName:     header.Filename,
+			RelativePath: relativePath,
+			Open: func() (io.ReadCloser, error) {
+				return header.Open()
+			},
+		})
+	}
+
+	return files, form.Value["directories"]
+}
+
+func archiveName(remotePaths []string) string {
+	if len(remotePaths) == 1 {
+		base := path.Base(strings.TrimSpace(remotePaths[0]))
+		if base != "." && base != "/" && base != "" {
+			return base + ".zip"
+		}
+	}
+	return "zshell-download.zip"
 }
 
 func decodeJSON(r *http.Request, out any) error {
