@@ -17,8 +17,10 @@ type InteractiveShell struct {
 	stdout  io.Reader
 	stderr  io.Reader
 
-	mu     sync.Mutex
-	closed bool
+	doneCh    chan struct{}
+	closeOnce sync.Once
+	mu        sync.Mutex
+	closed    bool
 }
 
 func NewInteractiveShell(conn model.Connection, timeout time.Duration, cols int, rows int) (*InteractiveShell, error) {
@@ -83,13 +85,17 @@ func NewInteractiveShell(conn model.Connection, timeout time.Duration, cols int,
 		return nil, fmt.Errorf("start shell: %w", err)
 	}
 
-	return &InteractiveShell{
+	shell := &InteractiveShell{
 		client:  client,
 		session: session,
 		stdin:   stdin,
 		stdout:  stdout,
 		stderr:  stderr,
-	}, nil
+		doneCh:  make(chan struct{}),
+	}
+	go shell.keepAliveLoop()
+
+	return shell, nil
 }
 
 func (s *InteractiveShell) WriteInput(text string) error {
@@ -139,14 +145,33 @@ func (s *InteractiveShell) Wait() error {
 }
 
 func (s *InteractiveShell) Close() error {
-	s.mu.Lock()
-	if s.closed {
+	var err error
+	s.closeOnce.Do(func() {
+		s.mu.Lock()
+		s.closed = true
 		s.mu.Unlock()
-		return nil
-	}
-	s.closed = true
-	s.mu.Unlock()
 
-	_ = s.session.Close()
-	return s.client.Close()
+		close(s.doneCh)
+		_ = s.session.Close()
+		err = s.client.Close()
+	})
+	return err
+}
+
+func (s *InteractiveShell) keepAliveLoop() {
+	ticker := time.NewTicker(25 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			_, _, err := s.client.SendRequest("keepalive@openssh.com", true, nil)
+			if err != nil {
+				_ = s.Close()
+				return
+			}
+		case <-s.doneCh:
+			return
+		}
+	}
 }

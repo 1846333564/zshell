@@ -21,6 +21,7 @@ type Entry struct {
 	Size    int64  `json:"size"`
 	IsDir   bool   `json:"isDir"`
 	Mode    string `json:"mode"`
+	Owner   string `json:"owner"`
 	ModTime string `json:"modTime"`
 }
 
@@ -93,6 +94,7 @@ func ListDirectory(conn model.Connection, remotePath string, timeout time.Durati
 			Size:    item.Size(),
 			IsDir:   item.IsDir(),
 			Mode:    item.Mode().String(),
+			Owner:   ownerFromFileInfo(item),
 			ModTime: item.ModTime().UTC().Format(time.RFC3339),
 		})
 	}
@@ -398,6 +400,14 @@ func resolveRemotePath(client *sftp.Client, input string) (string, error) {
 	}
 
 	return client.RealPath(target)
+}
+
+func ownerFromFileInfo(info os.FileInfo) string {
+	stat, ok := info.Sys().(*sftp.FileStat)
+	if !ok || stat == nil {
+		return "-"
+	}
+	return fmt.Sprintf("%d:%d", stat.UID, stat.GID)
 }
 
 func cleanRelativePath(value string, fallbackName string) (string, error) {

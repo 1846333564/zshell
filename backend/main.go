@@ -57,6 +57,7 @@ func main() {
 		BackgroundColour:         options.NewRGB(5, 12, 18),
 		AssetServer:              &assetserver.Options{Handler: web.HandlerWithConfig(apiBaseURL)},
 		OnShutdown:               shutdownServer(server),
+		Frameless:                true,
 		EnableDefaultContextMenu: true,
 		Windows: &windows.Options{
 			Theme:                windows.Dark,

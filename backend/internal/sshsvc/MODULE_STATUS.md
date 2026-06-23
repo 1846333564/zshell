@@ -11,8 +11,8 @@ SSH client creation, auth method selection, one-shot command execution, and inte
 
 ## Current State
 
-Supports password auth and current Windows user's `~/.ssh/id_rsa` private key. PTY shell powers the terminal WebSocket.
+Supports password auth and current Windows user's `~/.ssh/id_rsa` private key. PTY shell powers the terminal WebSocket and sends periodic SSH global keepalive requests for long-running interactive terminals.
 
 ## Known Work
 
-Host key checking is still permissive. Private key mode is intentionally limited to `~/.ssh/id_rsa`.
+Host key checking is still permissive. Private key mode is intentionally limited to `~/.ssh/id_rsa`. If a remote shell itself enforces idle logout through shell policy such as `TMOUT`, transport keepalive will not override that server policy.

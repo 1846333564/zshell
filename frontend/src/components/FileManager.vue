@@ -1,5 +1,5 @@
 <template>
-  <div class="file-manager-shell" @click="hideContextMenu">
+  <div class="file-manager-shell" @click="hideContextMenu" @contextmenu.prevent.stop="openBlankContextMenu($event)">
     <div class="file-path-row">
       <input
         class="path-input"
@@ -11,13 +11,54 @@
       <span class="hint">{{ statusText }}</span>
     </div>
 
+    <input ref="fileInput" class="hidden-file-input" type="file" multiple @change="onFilePickerUpload" />
+    <input ref="folderInput" class="hidden-file-input" type="file" multiple webkitdirectory directory @change="onFolderPickerUpload" />
+
     <div class="file-error">{{ errorMessage || '\u00A0' }}</div>
 
+    <div
+      v-if="uploadProgress.visible"
+      class="upload-progress-panel"
+      :class="{ done: uploadProgress.status === 'done', error: uploadProgress.status === 'error' }"
+      @click.stop
+      @contextmenu.prevent.stop
+    >
+      <div class="upload-progress-head">
+        <strong>{{ uploadTitle }}</strong>
+        <span>{{ uploadPercent }}%</span>
+      </div>
+      <div class="upload-progress-meta">
+        <span>{{ uploadDetail }}</span>
+        <span>{{ formatUploadSpeed(uploadProgress.speed) }}</span>
+      </div>
+      <div class="progress-track">
+        <span :style="{ width: `${uploadPercent}%` }"></span>
+      </div>
+      <div class="upload-progress-meta">
+        <span>{{ formatSize(uploadProgress.loadedBytes) }} / {{ formatSize(uploadProgress.totalBytes) }}</span>
+        <span>{{ uploadProgress.targetPath }}</span>
+      </div>
+
+      <div v-if="uploadProgress.files.length" class="upload-file-list">
+        <div v-for="item in uploadProgress.files" :key="item.id" class="upload-file-row">
+          <div class="upload-file-main">
+            <span>{{ item.relativePath }}</span>
+            <span>{{ formatSize(item.loaded) }} / {{ formatSize(item.size) }}</span>
+          </div>
+          <div class="progress-track small">
+            <span :style="{ width: `${uploadFilePercent(item)}%` }"></span>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="uploadProgress.message" class="upload-progress-message">{{ uploadProgress.message }}</div>
+    </div>
+
     <div v-if="connectionId" class="file-split" :class="{ 'nav-collapsed': navCollapsed }">
-      <aside v-if="!navCollapsed" class="path-navigator" @contextmenu.prevent.stop="openBlankContextMenu">
+      <aside v-if="!navCollapsed" class="path-navigator" @contextmenu.prevent.stop="openBlankContextMenu($event)">
         <div class="path-nav-head">
           <span>路径</span>
-          <button class="path-nav-toggle" title="折叠" @click.stop="navCollapsed = true">‹</button>
+          <button class="path-nav-toggle" title="折叠导航" @click.stop="navCollapsed = true">‹</button>
         </div>
 
         <div
@@ -27,22 +68,23 @@
           :style="{ paddingLeft: `${node.depth * 14 + 8}px` }"
         >
           <button
-            class="node-arrow"
-            :class="{ hidden: !node.hasChildren }"
-            :disabled="!node.hasChildren"
-            @click.stop="togglePathNode(node.path)"
-          >
-            {{ node.collapsed ? '›' : '⌄' }}
-          </button>
-          <button
             class="path-node-main"
             :class="{ active: node.path === currentPath, opened: node.opened }"
             @click.stop="openDir(node.path)"
-            @contextmenu.prevent.stop="openBlankContextMenu"
+            @contextmenu.prevent.stop="openPathContextMenu($event, node.path)"
           >
             <span class="node-label">{{ displayPath(node.path) }}</span>
-            <span class="node-state" :class="{ opened: node.opened }">{{ node.opened ? '开' : '未' }}</span>
           </button>
+          <button
+            v-if="node.hasChildren"
+            class="node-toggle"
+            :title="node.collapsed ? '展开' : '折叠'"
+            @click.stop="togglePathNode(node.path)"
+            @contextmenu.prevent.stop="openPathContextMenu($event, node.path)"
+          >
+            {{ node.collapsed ? '▸' : '▾' }}
+          </button>
+          <span v-else class="node-toggle-spacer"></span>
         </div>
       </aside>
 
@@ -50,9 +92,15 @@
 
       <section
         class="file-list-pane"
+        :class="{ 'drag-over': dragOver }"
         @click="onPaneClick"
-        @contextmenu.prevent="openBlankContextMenu"
+        @contextmenu.prevent.stop="openBlankContextMenu($event)"
+        @dragover.prevent="onDragOver"
+        @dragleave="onDragLeave"
+        @drop.prevent="onDropUpload"
       >
+        <div v-if="dragOver" class="drop-hint">释放后上传到当前目录</div>
+
         <div class="breadcrumb-row">
           <button
             v-for="crumb in breadcrumbs"
@@ -67,26 +115,30 @@
         </div>
 
         <div class="file-list">
-          <div class="file-row file-row-head">
-            <span>名称</span>
-            <span>大小</span>
-            <span>修改时间</span>
+          <div class="file-row file-row-head" :style="{ gridTemplateColumns }">
+            <span v-for="column in columns" :key="column.key" class="file-head-cell">
+              {{ column.label }}
+              <span class="column-resizer" @mousedown.prevent.stop="startColumnResize($event, column.key)"></span>
+            </span>
           </div>
           <div
             v-for="(entry, index) in orderedEntries"
             :key="entry.path"
             class="file-row"
             :class="{ selected: isSelected(entry) }"
+            :style="{ gridTemplateColumns }"
+            draggable="true"
             @click.stop="selectEntry(entry, index, $event)"
             @dblclick.stop="openEntry(entry)"
             @contextmenu.prevent.stop="openEntryContextMenu($event, entry, index)"
+            @dragstart="onRemoteDragStart($event, entry, index)"
           >
-            <span class="name-cell" :class="{ dir: entry.isDir }">
-              <span class="type-badge">{{ entry.isDir ? 'DIR' : 'FILE' }}</span>
-              {{ entry.name }}
-            </span>
+            <span class="name-cell" :class="{ dir: entry.isDir }">{{ entry.name }}</span>
+            <span>{{ entry.isDir ? '文件夹' : '文件' }}</span>
             <span>{{ entry.isDir ? '-' : formatSize(entry.size) }}</span>
             <span>{{ formatTime(entry.modTime) }}</span>
+            <span>{{ entry.mode || '-' }}</span>
+            <span>{{ entry.owner || '-' }}</span>
           </div>
           <div v-if="orderedEntries.length === 0" class="empty-tip">当前目录为空。</div>
         </div>
@@ -96,21 +148,59 @@
 
     <div
       v-if="contextMenu.visible"
-      class="context-menu"
+      class="context-menu file-context-menu"
       :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
       @click.stop
+      @contextmenu.prevent.stop
     >
       <button :disabled="!connectionId || loading" @click="refreshFromMenu">刷新</button>
+
+      <div class="context-menu-separator"></div>
+      <button v-if="contextEntry?.isDir" :disabled="loading" @click="openContextDirectory">打开</button>
+      <button v-if="contextEntry && !contextEntry.isDir" :disabled="loading" @click="downloadContextEntry">下载</button>
+      <button :disabled="!hasSelection || loading" @click="downloadSelectionFromMenu">下载选中</button>
+
+      <div class="context-menu-separator"></div>
+      <button :disabled="!connectionId || uploading" @click="chooseFilesFromMenu">上传文件到此处...</button>
+      <button :disabled="!connectionId || uploading" @click="chooseFolderFromMenu">上传文件夹到此处...</button>
+
+      <div class="context-menu-separator"></div>
+      <button :disabled="!hasSelection" @click="copySelectionFromMenu">复制</button>
+      <button :disabled="!hasSelection" @click="cutSelectionFromMenu">剪切</button>
+      <button :disabled="!canPaste || loading" @click="pasteClipboardFromMenu">粘贴到此处</button>
+
+      <div class="context-menu-separator"></div>
+      <button :disabled="!contextPath" @click="copyPathFromMenu">复制路径</button>
     </div>
   </div>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import { downloadRemoteFile, listRemoteFiles } from '../services/apiClient';
+import {
+  archiveRemoteItemsUrl,
+  backendDownloadUrl,
+  downloadRemoteFile,
+  downloadRemoteItems,
+  listRemoteFiles,
+  transferRemoteItems,
+  uploadRemoteItems,
+} from '../services/apiClient';
 
 const ROOT_PATH = '/';
 const HOME_PATH = '~';
+const CLIPBOARD_KEY = 'zshell.remote-file.clipboard.v1';
+const MIN_COLUMN_WIDTH = 70;
+const UPLOAD_CLOSE_DELAY_MS = 1200;
+
+const columns = [
+  { key: 'name', label: '名称', width: 280 },
+  { key: 'type', label: '类型', width: 82 },
+  { key: 'size', label: '大小', width: 110 },
+  { key: 'modTime', label: '修改时间', width: 175 },
+  { key: 'mode', label: '权限', width: 125 },
+  { key: 'owner', label: '所属用户', width: 110 },
+];
 
 const props = defineProps({
   connectionId: {
@@ -122,9 +212,29 @@ const props = defineProps({
 const entries = ref([]);
 const currentPath = ref(HOME_PATH);
 const loading = ref(false);
+const uploading = ref(false);
+const dragOver = ref(false);
 const errorMessage = ref('');
 const navCollapsed = ref(false);
 const selectedPaths = ref(new Set());
+const lastSelectedIndex = ref(-1);
+const clipboard = ref(readClipboard());
+const fileInput = ref(null);
+const folderInput = ref(null);
+const pendingUploadPath = ref('');
+const columnWidths = reactive(loadColumnWidths());
+const uploadProgress = reactive({
+  visible: false,
+  status: 'idle',
+  targetPath: '',
+  files: [],
+  directoryCount: 0,
+  totalBytes: 0,
+  loadedBytes: 0,
+  speed: 0,
+  startedAt: 0,
+  message: '',
+});
 const pathMeta = ref(
   new Map([
     [ROOT_PATH, { opened: false, collapsed: false }],
@@ -132,10 +242,15 @@ const pathMeta = ref(
   ]),
 );
 
+let resizeState = null;
+let uploadCloseTimer = null;
+
 const contextMenu = reactive({
   visible: false,
   x: 0,
   y: 0,
+  entry: null,
+  targetPath: '',
 });
 
 watch(
@@ -164,17 +279,58 @@ const orderedEntries = computed(() =>
   }),
 );
 
+const selectedEntries = computed(() => orderedEntries.value.filter((entry) => selectedPaths.value.has(entry.path)));
+const hasSelection = computed(() => selectedEntries.value.length > 0);
+const canPaste = computed(() => Boolean(props.connectionId && clipboard.value?.items?.length));
+const contextEntry = computed(() => contextMenu.entry);
+const contextPath = computed(() => contextMenu.entry?.path || contextMenu.targetPath || currentPath.value || HOME_PATH);
+const contextTargetDir = computed(() => (contextMenu.entry?.isDir ? contextMenu.entry.path : contextMenu.targetPath || currentPath.value || HOME_PATH));
+const gridTemplateColumns = computed(() => columns.map((column) => `${columnWidths[column.key]}px`).join(' '));
+
 const statusText = computed(() => {
   if (!props.connectionId) {
     return '未连接';
   }
+  if (uploading.value) {
+    return `上传 ${uploadPercent.value}% · ${formatUploadSpeed(uploadProgress.speed)}`;
+  }
   if (loading.value) {
     return '读取中...';
+  }
+  if (clipboard.value?.items?.length) {
+    return `${clipboard.value.action === 'move' ? '剪切' : '复制'}了 ${clipboard.value.items.length} 项`;
   }
   return `${orderedEntries.value.length} 项`;
 });
 
 const breadcrumbs = computed(() => buildBreadcrumbs(currentPath.value));
+const uploadPercent = computed(() => {
+  if (uploadProgress.status === 'done') {
+    return 100;
+  }
+  if (uploadProgress.totalBytes <= 0) {
+    return 0;
+  }
+  return Math.min(100, Math.max(0, Math.round((uploadProgress.loadedBytes / uploadProgress.totalBytes) * 100)));
+});
+const uploadTitle = computed(() => {
+  if (uploadProgress.status === 'done') {
+    return '上传完成';
+  }
+  if (uploadProgress.status === 'error') {
+    return '上传失败';
+  }
+  return `上传 ${uploadProgress.files.length + uploadProgress.directoryCount} 项`;
+});
+const uploadDetail = computed(() => {
+  if (uploadProgress.status === 'done') {
+    return '已完成，稍后自动关闭';
+  }
+  if (uploadProgress.status === 'error') {
+    return '请检查连接或远程目录权限';
+  }
+  return `总进度 ${uploadPercent.value}%`;
+});
 
 const treeNodes = computed(() => {
   const paths = Array.from(pathMeta.value.keys()).filter(Boolean).sort(comparePaths);
@@ -193,11 +349,16 @@ const treeNodes = computed(() => {
 });
 
 onMounted(() => {
+  applyColumnWidths();
+  window.addEventListener('storage', onStorage);
   window.addEventListener('keydown', onKeydown);
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener('storage', onStorage);
   window.removeEventListener('keydown', onKeydown);
+  clearUploadCloseTimer();
+  stopColumnResize();
 });
 
 async function refresh(targetPath = currentPath.value || HOME_PATH) {
@@ -216,7 +377,9 @@ async function refresh(targetPath = currentPath.value || HOME_PATH) {
     entries.value = Array.isArray(result.entries) ? result.entries : [];
 
     rememberPath(ROOT_PATH);
-    rememberPath(HOME_PATH, { opened: requestedPath === HOME_PATH || resolvedPath === HOME_PATH });
+    if (requestedPath === HOME_PATH || requestedPath.startsWith('~/')) {
+      rememberPath(HOME_PATH, { opened: true });
+    }
     rememberParentChain(resolvedPath);
     rememberPath(resolvedPath, { opened: true, collapsed: false });
     for (const entry of entries.value) {
@@ -301,6 +464,100 @@ function onPathChange(event) {
   refresh(value);
 }
 
+function chooseFiles(targetPath = contextTargetDir.value) {
+  pendingUploadPath.value = targetPath || currentPath.value || HOME_PATH;
+  fileInput.value?.click();
+}
+
+function chooseFolder(targetPath = contextTargetDir.value) {
+  pendingUploadPath.value = targetPath || currentPath.value || HOME_PATH;
+  folderInput.value?.click();
+}
+
+function chooseFilesFromMenu() {
+  const target = contextTargetDir.value;
+  hideContextMenu();
+  chooseFiles(target);
+}
+
+function chooseFolderFromMenu() {
+  const target = contextTargetDir.value;
+  hideContextMenu();
+  chooseFolder(target);
+}
+
+async function onFilePickerUpload(event) {
+  const files = Array.from(event.target.files || []);
+  await uploadPickedFiles(files, [], pendingUploadPath.value || currentPath.value || HOME_PATH);
+  event.target.value = '';
+}
+
+async function onFolderPickerUpload(event) {
+  const files = Array.from(event.target.files || []);
+  const directories = deriveDirectoriesFromFiles(files);
+  await uploadPickedFiles(files, directories, pendingUploadPath.value || currentPath.value || HOME_PATH);
+  event.target.value = '';
+}
+
+async function uploadPickedFiles(files, directories = [], targetPath = currentPath.value || HOME_PATH) {
+  const items = files.map((file) => ({
+    file,
+    relativePath: file.webkitRelativePath || file.name,
+  }));
+  await uploadItems(items, directories, targetPath);
+}
+
+async function uploadItems(items, directories = [], targetPath = currentPath.value || HOME_PATH) {
+  if (!props.connectionId || (items.length === 0 && directories.length === 0)) {
+    return;
+  }
+
+  uploading.value = true;
+  errorMessage.value = '';
+  startUploadProgress(items, directories, targetPath || currentPath.value || HOME_PATH);
+  let succeeded = false;
+
+  try {
+    await uploadRemoteItems(props.connectionId, targetPath || currentPath.value || HOME_PATH, items, directories, onUploadProgress);
+    succeeded = true;
+    markUploadComplete();
+    await refresh(currentPath.value || HOME_PATH);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '上传失败';
+    errorMessage.value = message;
+    markUploadError(message);
+  } finally {
+    uploading.value = false;
+    if (succeeded) {
+      scheduleUploadPanelClose();
+    }
+  }
+}
+
+function onDragOver(event) {
+  if (!props.connectionId) {
+    return;
+  }
+  event.dataTransfer.dropEffect = 'copy';
+  dragOver.value = true;
+}
+
+function onDragLeave(event) {
+  if (!event.currentTarget.contains(event.relatedTarget)) {
+    dragOver.value = false;
+  }
+}
+
+async function onDropUpload(event) {
+  dragOver.value = false;
+  if (!props.connectionId) {
+    return;
+  }
+
+  const { files, directories } = await collectDroppedItems(event.dataTransfer);
+  await uploadItems(files, directories, currentPath.value || HOME_PATH);
+}
+
 async function download(itemPath, name) {
   if (!props.connectionId) {
     return;
@@ -314,7 +571,60 @@ async function download(itemPath, name) {
   }
 }
 
+async function downloadSelection() {
+  if (!hasSelection.value) {
+    return;
+  }
+
+  const selected = selectedEntries.value;
+  const paths = selected.map((entry) => entry.path);
+  errorMessage.value = '';
+
+  try {
+    if (selected.length === 1 && !selected[0].isDir) {
+      await downloadRemoteFile(props.connectionId, selected[0].path, selected[0].name);
+      return;
+    }
+    await downloadRemoteItems(props.connectionId, paths, downloadArchiveName(selected));
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '下载失败';
+  }
+}
+
+async function downloadSelectionFromMenu() {
+  hideContextMenu();
+  await downloadSelection();
+}
+
+async function downloadContextEntry() {
+  const entry = contextMenu.entry;
+  hideContextMenu();
+  if (!entry || entry.isDir) {
+    return;
+  }
+  await download(entry.path, entry.name);
+}
+
+function openContextDirectory() {
+  const entry = contextMenu.entry;
+  hideContextMenu();
+  if (entry?.isDir) {
+    openDir(entry.path);
+  }
+}
+
 function selectEntry(entry, index, event) {
+  if (event.shiftKey && lastSelectedIndex.value >= 0) {
+    const start = Math.min(lastSelectedIndex.value, index);
+    const end = Math.max(lastSelectedIndex.value, index);
+    const next = new Set(selectedPaths.value);
+    for (let i = start; i <= end; i += 1) {
+      next.add(orderedEntries.value[i].path);
+    }
+    selectedPaths.value = next;
+    return;
+  }
+
   if (event.ctrlKey || event.metaKey) {
     const next = new Set(selectedPaths.value);
     if (next.has(entry.path)) {
@@ -323,10 +633,12 @@ function selectEntry(entry, index, event) {
       next.add(entry.path);
     }
     selectedPaths.value = next;
+    lastSelectedIndex.value = index;
     return;
   }
 
   selectedPaths.value = new Set([entry.path]);
+  lastSelectedIndex.value = index;
 }
 
 function isSelected(entry) {
@@ -335,6 +647,7 @@ function isSelected(entry) {
 
 function clearSelection() {
   selectedPaths.value = new Set();
+  lastSelectedIndex.value = -1;
 }
 
 function keepExistingSelection() {
@@ -349,21 +662,31 @@ function onPaneClick(event) {
   hideContextMenu();
 }
 
-function openEntryContextMenu(event, entry) {
+function openEntryContextMenu(event, entry, index) {
   if (!selectedPaths.value.has(entry.path)) {
     selectedPaths.value = new Set([entry.path]);
+    lastSelectedIndex.value = index;
   }
-  openContextMenu(event);
+  openContextMenu(event, {
+    entry,
+    targetPath: entry.isDir ? entry.path : currentPath.value || HOME_PATH,
+  });
+}
+
+function openPathContextMenu(event, targetPath) {
+  openContextMenu(event, { targetPath });
 }
 
 function openBlankContextMenu(event) {
-  openContextMenu(event);
+  openContextMenu(event, { targetPath: currentPath.value || HOME_PATH });
 }
 
-function openContextMenu(event) {
+function openContextMenu(event, target = {}) {
   contextMenu.visible = true;
-  contextMenu.x = Math.min(event.clientX, window.innerWidth - 150);
-  contextMenu.y = Math.min(event.clientY, window.innerHeight - 70);
+  contextMenu.entry = target.entry || null;
+  contextMenu.targetPath = target.targetPath || currentPath.value || HOME_PATH;
+  contextMenu.x = Math.min(event.clientX, window.innerWidth - 230);
+  contextMenu.y = Math.min(event.clientY, window.innerHeight - 285);
 }
 
 function hideContextMenu() {
@@ -371,8 +694,304 @@ function hideContextMenu() {
 }
 
 async function refreshFromMenu() {
+  const target = contextMenu.targetPath || currentPath.value || HOME_PATH;
   hideContextMenu();
-  await refresh(currentPath.value || HOME_PATH);
+  await refresh(target);
+}
+
+function copySelection() {
+  writeClipboard('copy');
+}
+
+function cutSelection() {
+  writeClipboard('move');
+}
+
+function copySelectionFromMenu() {
+  hideContextMenu();
+  copySelection();
+}
+
+function cutSelectionFromMenu() {
+  hideContextMenu();
+  cutSelection();
+}
+
+function writeClipboard(action) {
+  if (!hasSelection.value) {
+    return;
+  }
+
+  const payload = {
+    sourceConnectionId: props.connectionId,
+    action,
+    items: selectedEntries.value.map((entry) => ({
+      path: entry.path,
+      isDir: entry.isDir,
+    })),
+    createdAt: Date.now(),
+  };
+  localStorage.setItem(CLIPBOARD_KEY, JSON.stringify(payload));
+  clipboard.value = payload;
+}
+
+async function pasteClipboard(targetPath = contextTargetDir.value) {
+  if (!canPaste.value) {
+    return;
+  }
+
+  loading.value = true;
+  errorMessage.value = '';
+
+  try {
+    await transferRemoteItems({
+      sourceConnectionId: clipboard.value.sourceConnectionId,
+      targetConnectionId: props.connectionId,
+      targetPath: targetPath || currentPath.value || HOME_PATH,
+      action: clipboard.value.action,
+      items: clipboard.value.items,
+    });
+    if (clipboard.value.action === 'move') {
+      localStorage.removeItem(CLIPBOARD_KEY);
+      clipboard.value = null;
+    }
+    await refresh(currentPath.value || HOME_PATH);
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '粘贴失败';
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function pasteClipboardFromMenu() {
+  const target = contextTargetDir.value;
+  hideContextMenu();
+  await pasteClipboard(target);
+}
+
+function copyPathFromMenu() {
+  const value = contextPath.value;
+  hideContextMenu();
+  if (value) {
+    navigator.clipboard?.writeText(value).catch(() => {});
+  }
+}
+
+function onRemoteDragStart(event, entry, index) {
+  if (!selectedPaths.value.has(entry.path)) {
+    selectedPaths.value = new Set([entry.path]);
+    lastSelectedIndex.value = index;
+  }
+
+  const selected = selectedEntries.value.length ? selectedEntries.value : [entry];
+  const paths = selected.map((item) => item.path);
+  const fileName = selected.length === 1 && !selected[0].isDir ? selected[0].name : downloadArchiveName(selected);
+  const url =
+    selected.length === 1 && !selected[0].isDir
+      ? backendDownloadUrl(`/api/sftp/download?connectionId=${encodeURIComponent(props.connectionId)}&path=${encodeURIComponent(selected[0].path)}`)
+      : archiveRemoteItemsUrl(props.connectionId, paths);
+  const absoluteUrl = new URL(url, window.location.origin).toString();
+
+  event.dataTransfer.effectAllowed = 'copy';
+  event.dataTransfer.setData('DownloadURL', `application/octet-stream:${fileName}:${absoluteUrl}`);
+  event.dataTransfer.setData('text/uri-list', absoluteUrl);
+  event.dataTransfer.setData('text/plain', absoluteUrl);
+}
+
+function deriveDirectoriesFromFiles(files) {
+  const directories = new Set();
+  for (const file of files) {
+    const relativePath = file.webkitRelativePath || '';
+    const parts = relativePath.split('/').filter(Boolean);
+    parts.pop();
+    for (let i = 1; i <= parts.length; i += 1) {
+      directories.add(parts.slice(0, i).join('/'));
+    }
+  }
+  return Array.from(directories);
+}
+
+async function collectDroppedItems(dataTransfer) {
+  const entriesFromItems = Array.from(dataTransfer.items || [])
+    .map((item) => (typeof item.webkitGetAsEntry === 'function' ? item.webkitGetAsEntry() : null))
+    .filter(Boolean);
+
+  if (entriesFromItems.length === 0) {
+    return {
+      files: Array.from(dataTransfer.files || []).map((file) => ({ file, relativePath: file.name })),
+      directories: [],
+    };
+  }
+
+  const files = [];
+  const directories = new Set();
+  for (const entry of entriesFromItems) {
+    await walkDroppedEntry(entry, '', files, directories);
+  }
+  return { files, directories: Array.from(directories) };
+}
+
+async function walkDroppedEntry(entry, parentPath, files, directories) {
+  const relativePath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
+  if (entry.isFile) {
+    const file = await fileFromEntry(entry);
+    files.push({ file, relativePath });
+    return;
+  }
+
+  if (!entry.isDirectory) {
+    return;
+  }
+
+  directories.add(relativePath);
+  const children = await readAllDirectoryEntries(entry.createReader());
+  for (const child of children) {
+    await walkDroppedEntry(child, relativePath, files, directories);
+  }
+}
+
+function fileFromEntry(entry) {
+  return new Promise((resolve, reject) => {
+    entry.file(resolve, reject);
+  });
+}
+
+function readAllDirectoryEntries(reader) {
+  return new Promise((resolve, reject) => {
+    const entries = [];
+    const readBatch = () => {
+      reader.readEntries(
+        (batch) => {
+          if (batch.length === 0) {
+            resolve(entries);
+            return;
+          }
+          entries.push(...batch);
+          readBatch();
+        },
+        (error) => reject(error),
+      );
+    };
+    readBatch();
+  });
+}
+
+function startUploadProgress(items, directories, targetPath) {
+  clearUploadCloseTimer();
+  const files = items.map((item, index) => ({
+    id: `${Date.now()}-${index}-${item.relativePath || item.file?.name || 'file'}`,
+    relativePath: item.relativePath || item.file?.webkitRelativePath || item.file?.name || `file-${index + 1}`,
+    size: Number(item.file?.size) || 0,
+    loaded: 0,
+  }));
+  uploadProgress.visible = true;
+  uploadProgress.status = 'uploading';
+  uploadProgress.targetPath = targetPath;
+  uploadProgress.files = files;
+  uploadProgress.directoryCount = directories.length;
+  uploadProgress.totalBytes = files.reduce((total, item) => total + item.size, 0);
+  uploadProgress.loadedBytes = 0;
+  uploadProgress.speed = 0;
+  uploadProgress.startedAt = Date.now();
+  uploadProgress.message = '';
+}
+
+function onUploadProgress(progress) {
+  if (!uploadProgress.visible || uploadProgress.status !== 'uploading') {
+    return;
+  }
+
+  const loaded = Number(progress?.loaded) || 0;
+  const total = Number(progress?.total) || 0;
+  let ratio = 0;
+  if (progress?.lengthComputable && total > 0) {
+    ratio = loaded / total;
+  } else if (uploadProgress.totalBytes > 0) {
+    ratio = loaded / uploadProgress.totalBytes;
+  }
+  ratio = Math.min(1, Math.max(0, ratio));
+
+  const loadedBytes = uploadProgress.totalBytes > 0 ? Math.round(uploadProgress.totalBytes * ratio) : loaded;
+  uploadProgress.loadedBytes = Math.min(uploadProgress.totalBytes || loadedBytes, loadedBytes);
+  distributeUploadLoaded(uploadProgress.loadedBytes);
+
+  const elapsedSeconds = Math.max((Date.now() - uploadProgress.startedAt) / 1000, 0.1);
+  uploadProgress.speed = uploadProgress.loadedBytes / elapsedSeconds;
+}
+
+function distributeUploadLoaded(loadedBytes) {
+  let remaining = loadedBytes;
+  for (const item of uploadProgress.files) {
+    item.loaded = Math.min(item.size, Math.max(0, remaining));
+    remaining -= item.size;
+  }
+}
+
+function markUploadComplete() {
+  uploadProgress.status = 'done';
+  uploadProgress.loadedBytes = uploadProgress.totalBytes;
+  distributeUploadLoaded(uploadProgress.totalBytes);
+  uploadProgress.speed = 0;
+  uploadProgress.message = '上传已完成';
+}
+
+function markUploadError(message) {
+  uploadProgress.status = 'error';
+  uploadProgress.message = message || '上传失败';
+}
+
+function scheduleUploadPanelClose() {
+  clearUploadCloseTimer();
+  uploadCloseTimer = window.setTimeout(() => {
+    uploadProgress.visible = false;
+    uploadCloseTimer = null;
+  }, UPLOAD_CLOSE_DELAY_MS);
+}
+
+function clearUploadCloseTimer() {
+  if (uploadCloseTimer) {
+    window.clearTimeout(uploadCloseTimer);
+    uploadCloseTimer = null;
+  }
+}
+
+function uploadFilePercent(item) {
+  if (uploadProgress.status === 'done') {
+    return 100;
+  }
+  if (!item.size) {
+    return uploadProgress.status === 'uploading' ? 0 : 100;
+  }
+  return Math.min(100, Math.max(0, Math.round((item.loaded / item.size) * 100)));
+}
+
+function formatUploadSpeed(bytesPerSecond) {
+  if (!bytesPerSecond || bytesPerSecond < 1) {
+    return '-';
+  }
+  return `${formatSize(bytesPerSecond)}/s`;
+}
+
+function readClipboard() {
+  try {
+    const raw = localStorage.getItem(CLIPBOARD_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed?.sourceConnectionId || !Array.isArray(parsed.items)) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function onStorage(event) {
+  if (event.key === CLIPBOARD_KEY) {
+    clipboard.value = readClipboard();
+  }
 }
 
 function onKeydown(event) {
@@ -385,6 +1004,54 @@ function onKeydown(event) {
   }
 }
 
+function startColumnResize(event, key) {
+  resizeState = {
+    key,
+    startX: event.clientX,
+    startWidth: columnWidths[key],
+  };
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+  window.addEventListener('mousemove', onColumnResize);
+  window.addEventListener('mouseup', stopColumnResize);
+}
+
+function onColumnResize(event) {
+  if (!resizeState) {
+    return;
+  }
+  const nextWidth = Math.max(MIN_COLUMN_WIDTH, resizeState.startWidth + event.clientX - resizeState.startX);
+  columnWidths[resizeState.key] = nextWidth;
+  applyColumnWidths();
+}
+
+function stopColumnResize() {
+  if (!resizeState) {
+    return;
+  }
+  resizeState = null;
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+  window.removeEventListener('mousemove', onColumnResize);
+  window.removeEventListener('mouseup', stopColumnResize);
+}
+
+function loadColumnWidths() {
+  const values = {};
+  for (const column of columns) {
+    const raw = document.documentElement.style.getPropertyValue(`--file-col-${column.key}`);
+    const parsed = Number.parseInt(raw, 10);
+    values[column.key] = Number.isFinite(parsed) ? parsed : column.width;
+  }
+  return values;
+}
+
+function applyColumnWidths() {
+  for (const column of columns) {
+    document.documentElement.style.setProperty(`--file-col-${column.key}`, `${columnWidths[column.key]}px`);
+  }
+}
+
 function normalizePath(value) {
   const raw = String(value || '').trim();
   if (!raw) {
@@ -394,7 +1061,8 @@ function normalizePath(value) {
     return raw;
   }
   if (raw.startsWith('~/')) {
-    return `${HOME_PATH}/${raw.split('/').filter(Boolean).slice(1).join('/')}`;
+    const parts = raw.slice(2).split('/').filter(Boolean);
+    return parts.length ? `${HOME_PATH}/${parts.join('/')}` : HOME_PATH;
   }
   if (raw.startsWith(ROOT_PATH)) {
     const parts = raw.split('/').filter(Boolean);
@@ -502,12 +1170,31 @@ function buildBreadcrumbs(itemPath) {
 }
 
 function displayPath(itemPath) {
-  return itemPath;
+  const normalized = normalizePath(itemPath);
+  if (normalized === ROOT_PATH || normalized === HOME_PATH) {
+    return normalized;
+  }
+  if (normalized.startsWith('~/')) {
+    const parts = normalized.slice(2).split('/').filter(Boolean);
+    return parts.at(-1) || HOME_PATH;
+  }
+  const parts = normalized.split('/').filter(Boolean);
+  return parts.at(-1) || normalized;
+}
+
+function downloadArchiveName(selected) {
+  if (selected.length === 1) {
+    return `${selected[0].name}.zip`;
+  }
+  return 'zshell-selected.zip';
 }
 
 function formatSize(size) {
+  if (typeof size !== 'number') {
+    return '-';
+  }
   if (size < 1024) {
-    return `${size} B`;
+    return `${Math.max(0, Math.round(size))} B`;
   }
   if (size < 1024 * 1024) {
     return `${(size / 1024).toFixed(1)} KB`;

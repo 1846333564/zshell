@@ -17,6 +17,12 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+const (
+	wsPongWait     = 75 * time.Second
+	wsPingInterval = 25 * time.Second
+	wsWriteWait    = 10 * time.Second
+)
+
 type TerminalHandler struct {
 	store      *store.MemoryStore
 	sshTimeout time.Duration
@@ -92,10 +98,20 @@ func (s *terminalSession) run() {
 }
 
 func (s *terminalSession) writeLoop() {
+	ticker := time.NewTicker(wsPingInterval)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case msg := <-s.outCh:
+			_ = s.ws.SetWriteDeadline(time.Now().Add(wsWriteWait))
 			if err := s.ws.WriteJSON(msg); err != nil {
+				s.stop()
+				return
+			}
+		case <-ticker.C:
+			_ = s.ws.SetWriteDeadline(time.Now().Add(wsWriteWait))
+			if err := s.ws.WriteControl(websocket.PingMessage, nil, time.Now().Add(wsWriteWait)); err != nil {
 				s.stop()
 				return
 			}
@@ -106,11 +122,18 @@ func (s *terminalSession) writeLoop() {
 }
 
 func (s *terminalSession) readWSLoop() {
+	s.ws.SetReadLimit(8192)
+	_ = s.ws.SetReadDeadline(time.Now().Add(wsPongWait))
+	s.ws.SetPongHandler(func(string) error {
+		return s.ws.SetReadDeadline(time.Now().Add(wsPongWait))
+	})
+
 	for {
 		_, raw, err := s.ws.ReadMessage()
 		if err != nil {
 			return
 		}
+		_ = s.ws.SetReadDeadline(time.Now().Add(wsPongWait))
 
 		var msg Message
 		if err := json.Unmarshal(raw, &msg); err != nil {

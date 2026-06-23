@@ -37,6 +37,7 @@ let term;
 let fitAddon;
 let wsClient;
 let resizeObserver;
+let terminalFontSize = 14;
 
 const online = ref(false);
 
@@ -44,7 +45,7 @@ onMounted(async () => {
   term = new Terminal({
     cursorBlink: true,
     convertEol: true,
-    fontSize: 14,
+    fontSize: terminalFontSize,
     lineHeight: 1.3,
     theme: {
       background: '#030a14',
@@ -69,6 +70,7 @@ onMounted(async () => {
       brightWhite: '#ffffff',
     },
   });
+  term.attachCustomKeyEventHandler(handleTerminalShortcut);
 
   fitAddon = new FitAddon();
   term.loadAddon(fitAddon);
@@ -169,5 +171,80 @@ function disconnect() {
     wsClient = null;
   }
   online.value = false;
+}
+
+function handleTerminalShortcut(event) {
+  if (event.type !== 'keydown' || !event.ctrlKey) {
+    return true;
+  }
+
+  const key = event.key.toLowerCase();
+  if (event.shiftKey && key === 'c') {
+    copyTerminalSelection();
+    event.preventDefault();
+    return false;
+  }
+
+  if (event.shiftKey && key === 'v') {
+    pasteClipboardToTerminal();
+    event.preventDefault();
+    return false;
+  }
+
+  if (key === '+' || key === '=') {
+    adjustTerminalFontSize(1);
+    event.preventDefault();
+    return false;
+  }
+
+  if (key === '-' || key === '_') {
+    adjustTerminalFontSize(-1);
+    event.preventDefault();
+    return false;
+  }
+
+  if (key === '0') {
+    terminalFontSize = 14;
+    applyTerminalFontSize();
+    event.preventDefault();
+    return false;
+  }
+
+  return true;
+}
+
+function adjustTerminalFontSize(delta) {
+  terminalFontSize = Math.min(28, Math.max(10, terminalFontSize + delta));
+  applyTerminalFontSize();
+}
+
+function applyTerminalFontSize() {
+  if (!term || !fitAddon) {
+    return;
+  }
+  term.options.fontSize = terminalFontSize;
+  fitAddon.fit();
+  if (online.value && wsClient) {
+    wsClient.sendResize(term.cols, term.rows);
+  }
+}
+
+function copyTerminalSelection() {
+  const text = term?.getSelection() || '';
+  if (!text) {
+    return;
+  }
+  navigator.clipboard?.writeText(text).catch(() => {});
+}
+
+function pasteClipboardToTerminal() {
+  if (!online.value || !wsClient || !navigator.clipboard?.readText) {
+    return;
+  }
+  navigator.clipboard.readText().then((text) => {
+    if (text && online.value && wsClient) {
+      wsClient.sendInput(text);
+    }
+  }).catch(() => {});
 }
 </script>

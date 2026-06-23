@@ -37,7 +37,14 @@ try {
   if (!(Test-Path -LiteralPath $builtExe)) {
     throw "Wails build did not produce $builtExe"
   }
-  Get-Process | Where-Object { $_.Path -eq $outputExe } | Stop-Process -Force
+  $runningOutput = Get-Process | Where-Object { $_.Path -eq $outputExe }
+  if ($runningOutput) {
+    $runningOutput | Stop-Process -Force
+    foreach ($process in $runningOutput) {
+      Wait-Process -Id $process.Id -Timeout 5 -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Milliseconds 300
+  }
   Copy-Item -LiteralPath $builtExe -Destination $outputExe -Force
 } finally {
   Pop-Location

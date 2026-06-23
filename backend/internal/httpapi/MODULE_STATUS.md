@@ -10,7 +10,7 @@ HTTP routes for health, connection lifecycle, SSH actions, SFTP actions, cross-s
 
 ## Current State
 
-Routes are registered on a standard `http.ServeMux`. Connection config routes live at `/api/config/connections` with `GET`, `POST`, `PUT`, and `DELETE`. Saved configs are backed by `configstore` and active runtime lookups use `store.MemoryStore`. Editing a password connection with an empty password keeps the previously saved password. SFTP upload supports multiple files/directories. Monitor snapshots are returned by `POST /api/monitor/snapshot`.
+Routes are registered on a standard `http.ServeMux`. Connection config routes live at `/api/config/connections` with `GET`, `POST`, `PUT`, and `DELETE`; UI preferences live at `/api/config/preferences` with `GET` and `PUT`. Saved configs are backed by `configstore` and active runtime lookups use `store.MemoryStore`. Editing a password connection with an empty password keeps the previously saved password. SFTP upload supports multiple files/directories. Monitor snapshots are returned by `POST /api/monitor/snapshot`.
 
 ## Known Work
 

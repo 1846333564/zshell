@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"path"
@@ -57,6 +58,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/connections", s.handleConnections)
 	mux.HandleFunc("/api/config/connections", s.handleConnectionConfigs)
+	mux.HandleFunc("/api/config/preferences", s.handleUIPreferences)
 	mux.HandleFunc("/api/ssh/test", s.handleSSHTest)
 	mux.HandleFunc("/api/ssh/exec", s.handleSSHExec)
 	mux.HandleFunc("/api/sftp/list", s.handleSFTPList)
@@ -105,6 +107,10 @@ type monitorSnapshotRequest struct {
 	ProcessSort  string `json:"processSort"`
 }
 
+type uiPreferencesRequest struct {
+	UIScale float64 `json:"uiScale"`
+}
+
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -138,6 +144,32 @@ func (s *Server) handleConnectionConfigs(w http.ResponseWriter, r *http.Request)
 		s.updateConnectionConfig(w, r)
 	case http.MethodDelete:
 		s.deleteConnectionConfig(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func (s *Server) handleUIPreferences(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		preferences, err := s.loadUIPreferences()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"preferences": preferences})
+	case http.MethodPut:
+		var req uiPreferencesRequest
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		preferences := configstore.Preferences{UIScale: normalizeUIScale(req.UIScale)}
+		if err := s.saveUIPreferences(preferences); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"preferences": preferences})
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
@@ -550,6 +582,34 @@ func (s *Server) saveConnectionConfigs() error {
 		return err
 	}
 	return nil
+}
+
+func (s *Server) loadUIPreferences() (configstore.Preferences, error) {
+	if s.configStore == nil {
+		return configstore.Preferences{}, errors.New("connection config store unavailable")
+	}
+	preferences, err := s.configStore.LoadPreferences()
+	if err != nil {
+		return configstore.Preferences{}, err
+	}
+	preferences.UIScale = normalizeUIScale(preferences.UIScale)
+	return preferences, nil
+}
+
+func (s *Server) saveUIPreferences(preferences configstore.Preferences) error {
+	if s.configStore == nil {
+		return errors.New("connection config store unavailable")
+	}
+	preferences.UIScale = normalizeUIScale(preferences.UIScale)
+	return s.configStore.SavePreferences(preferences)
+}
+
+func normalizeUIScale(value float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value <= 0 {
+		return 1
+	}
+	value = math.Min(1.35, math.Max(0.82, value))
+	return math.Round(value*100) / 100
 }
 
 func normalizeAuthMethod(value string) string {

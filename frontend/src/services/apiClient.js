@@ -55,6 +55,19 @@ export function deleteConnectionConfig(id) {
   });
 }
 
+export function getUIPreferences() {
+  return requestJson('/api/config/preferences', {
+    method: 'GET',
+  });
+}
+
+export function saveUIPreferences(payload) {
+  return requestJson('/api/config/preferences', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
 export function testConnection(connectionId) {
   return requestJson('/api/ssh/test', {
     method: 'POST',
@@ -69,11 +82,11 @@ export function listRemoteFiles(connectionId, path) {
   });
 }
 
-export async function uploadRemoteFile(connectionId, path, file) {
-  return uploadRemoteItems(connectionId, path, [{ file, relativePath: file.name }]);
+export async function uploadRemoteFile(connectionId, path, file, onProgress) {
+  return uploadRemoteItems(connectionId, path, [{ file, relativePath: file.name }], [], onProgress);
 }
 
-export async function uploadRemoteItems(connectionId, path, items, directories = []) {
+export async function uploadRemoteItems(connectionId, path, items, directories = [], onProgress) {
   const formData = new FormData();
   formData.append('connectionId', connectionId);
   formData.append('path', path);
@@ -87,16 +100,33 @@ export async function uploadRemoteItems(connectionId, path, items, directories =
     formData.append('directories', directory);
   }
 
-  const response = await fetch(apiUrl('/api/sftp/upload'), {
-    method: 'POST',
-    body: formData,
-  });
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', apiUrl('/api/sftp/upload'), true);
 
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(body.error || `upload failed: ${response.status}`);
-  }
-  return body;
+    xhr.upload.onprogress = (event) => {
+      if (typeof onProgress === 'function') {
+        onProgress({
+          loaded: event.loaded,
+          total: event.total,
+          lengthComputable: event.lengthComputable,
+        });
+      }
+    };
+
+    xhr.onload = () => {
+      const body = parseJson(xhr.responseText);
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error(body.error || `upload failed: ${xhr.status}`));
+        return;
+      }
+      resolve(body);
+    };
+
+    xhr.onerror = () => reject(new Error('upload failed: network error'));
+    xhr.onabort = () => reject(new Error('upload failed: aborted'));
+    xhr.send(formData);
+  });
 }
 
 export function getMonitorSnapshot(connectionId, processSort) {
@@ -161,4 +191,12 @@ export function transferRemoteItems(payload) {
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+function parseJson(value) {
+  try {
+    return JSON.parse(value || '{}');
+  } catch {
+    return {};
+  }
 }

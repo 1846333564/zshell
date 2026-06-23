@@ -12,7 +12,7 @@ Windows-user encrypted saved connection configuration.
 
 ## Current State
 
-Saved connections are written to `%AppData%\zShell\connections.dpapi` through `os.UserConfigDir()` and encrypted/decrypted with Windows DPAPI for the current user. Non-Windows builds return an explicit unsupported error.
+Saved connections and UI preferences are written to `%AppData%\zShell\connections.dpapi` through `os.UserConfigDir()` and encrypted/decrypted with Windows DPAPI for the current user. Non-Windows builds return an explicit unsupported error.
 
 ## Known Work
 

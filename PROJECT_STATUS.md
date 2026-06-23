@@ -24,12 +24,16 @@ zShell is a Windows desktop SSH/SFTP tool built with Go, Wails/WebView2, Vue, xt
 - Backend-owned saved connection create/list/update/delete APIs with Windows DPAPI-encrypted storage.
 - Saved connection editing in the frontend.
 - Connection tabs that show only the connection name.
-- File manager path navigation with fixed root `/`, resolved home paths such as `/root`, collapsible path navigation, and a refresh-only context menu.
+- File manager path navigation with fixed root `/`, resolved home paths such as `/root`, basename-only tree labels, centered right-side fold controls, color-only opened markers, full file context menu actions, and resizable file columns.
+- File upload by picker or drag/drop shows a compact progress panel with total progress, per-file progress, upload speed, and auto-close after completion.
+- Terminal-focused `Ctrl +` / `Ctrl -` font sizing, persisted non-terminal UI zoom, and terminal `Ctrl+Shift+C` / `Ctrl+Shift+V` clipboard shortcuts.
+- Interactive terminals use SSH keepalive and server-side WebSocket ping/pong to reduce idle/background disconnects.
+- The Wails window is frameless with a custom zShell top bar, placeholder `配置管理` and `UI管理` menus, custom window controls, and application-matched scrollbars.
 
 ## Active Gaps
 
 - More complete real-server validation still depends on user SSH targets.
-- Upload/copy/move/download-selection UI controls are currently not exposed in the file manager after the fixed toolbar was removed; backend endpoints still exist.
+- SFTP owner display uses protocol UID:GID values; resolving friendly usernames would require extra remote lookup logic.
 
 ## Required Workflow
 

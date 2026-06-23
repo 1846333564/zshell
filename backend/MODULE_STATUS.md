@@ -13,7 +13,7 @@ Go backend for Wails app startup, local API service, dynamic port binding, and r
 
 ## Current State
 
-The backend starts local API/WebSocket services on dynamic high ports and serves the frontend through Wails. Browser launch is intentionally disabled. Saved connection configs are loaded during API server startup and stored in memory for runtime terminal/SFTP/monitor use.
+The backend starts local API/WebSocket services on dynamic high ports and serves the frontend through Wails. The Wails app uses a frameless Windows window, while WebView context-menu events remain enabled so Vue can render custom file-manager menus and suppress non-file-area menus. Saved connection configs are loaded during API server startup and stored in memory for runtime terminal/SFTP/monitor use.
 
 ## Known Work
 

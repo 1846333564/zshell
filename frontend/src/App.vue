@@ -1,5 +1,49 @@
 <template>
-  <main class="app-shell">
+  <main class="app-shell" @contextmenu="handleAppContextMenu">
+    <header class="app-topbar">
+      <div class="topbar-drag-region">
+        <div class="brand-lockup">
+          <span class="brand-glyph">z</span>
+          <strong>zShell</strong>
+        </div>
+
+        <nav class="app-menu-strip" aria-label="应用菜单">
+          <div class="app-menu-item">
+            <button class="app-menu-button" type="button">zShell</button>
+            <div class="app-menu-dropdown">
+              <button type="button" @click="showConnectHome">连接首页</button>
+              <button type="button" disabled>关于 zShell</button>
+              <button type="button" @click="closeWindow">退出</button>
+            </div>
+          </div>
+
+          <div class="app-menu-item">
+            <button class="app-menu-button" type="button">配置管理</button>
+            <div class="app-menu-dropdown">
+              <button type="button" @click="showConnectHome">连接配置</button>
+              <button type="button" disabled>导入配置</button>
+              <button type="button" disabled>导出配置</button>
+            </div>
+          </div>
+
+          <div class="app-menu-item">
+            <button class="app-menu-button" type="button">UI管理</button>
+            <div class="app-menu-dropdown">
+              <button type="button" @click="resetUiScale">重置缩放</button>
+              <button type="button" disabled>主题设置</button>
+              <button type="button" disabled>布局设置</button>
+            </div>
+          </div>
+        </nav>
+      </div>
+
+      <div class="window-controls" aria-label="窗口控制">
+        <button type="button" title="最小化" @click="minimizeWindow">-</button>
+        <button type="button" title="最大化/还原" @click="toggleMaximizeWindow">□</button>
+        <button type="button" class="close" title="关闭" @click="closeWindow">×</button>
+      </div>
+    </header>
+
     <section class="desktop-layout">
       <aside class="monitor-sidebar panel">
         <MonitorPanel :session="activeSession" />
@@ -94,8 +138,10 @@ import MonitorPanel from './components/MonitorPanel.vue';
 import TerminalTabs from './components/TerminalTabs.vue';
 import {
   deleteConnectionConfig,
+  getUIPreferences,
   listConnectionConfigs,
   saveConnectionConfig,
+  saveUIPreferences,
   testConnection,
   updateConnectionConfig,
 } from './services/apiClient';
@@ -106,6 +152,7 @@ const configError = ref('');
 const connectError = ref('');
 const consoleHeightPercent = ref(58);
 const isDragging = ref(false);
+const uiScale = ref(1);
 const savedConnections = ref([]);
 const draftConnection = ref(defaultConnectionDraft());
 const editingConnectionId = ref('');
@@ -290,10 +337,14 @@ function authLabel(authMethod) {
 
 onMounted(() => {
   loadSavedConnections();
+  applyUiScale();
+  loadUIPreferences();
+  window.addEventListener('keydown', handleGlobalKeydown, true);
 });
 
 let moveHandler = null;
 let upHandler = null;
+let saveUiScaleTimer = null;
 
 function startDrag(event) {
   event.preventDefault();
@@ -330,8 +381,124 @@ function startDrag(event) {
   window.addEventListener('mouseup', onUp);
 }
 
+function handleGlobalKeydown(event) {
+  if (!event.ctrlKey || isTerminalEvent(event)) {
+    return;
+  }
+
+  const key = event.key.toLowerCase();
+  if (key === '+' || key === '=') {
+    adjustUiScale(0.05);
+    event.preventDefault();
+    return;
+  }
+  if (key === '-' || key === '_') {
+    adjustUiScale(-0.05);
+    event.preventDefault();
+    return;
+  }
+  if (key === '0') {
+    setUiScale(1, true);
+    event.preventDefault();
+  }
+}
+
+function isTerminalEvent(event) {
+  const target = event.target;
+  if (!(target instanceof Element)) {
+    return false;
+  }
+  return Boolean(target.closest('.terminal-wrap'));
+}
+
+function adjustUiScale(delta) {
+  setUiScale(uiScale.value + delta, true);
+}
+
+function resetUiScale() {
+  setUiScale(1, true);
+}
+
+function setUiScale(value, persist = false) {
+  uiScale.value = clampUiScale(value);
+  applyUiScale();
+  if (persist) {
+    scheduleSaveUiScale();
+  }
+}
+
+function clampUiScale(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 1;
+  }
+  return Math.min(1.35, Math.max(0.82, Number(parsed.toFixed(2))));
+}
+
+function applyUiScale() {
+  document.documentElement.style.setProperty('--ui-scale', uiScale.value.toFixed(2));
+}
+
+async function loadUIPreferences() {
+  try {
+    const result = await getUIPreferences();
+    setUiScale(result?.preferences?.uiScale || 1, false);
+  } catch (error) {
+    console.warn('load ui preferences failed', error);
+  }
+}
+
+function scheduleSaveUiScale() {
+  if (saveUiScaleTimer) {
+    window.clearTimeout(saveUiScaleTimer);
+  }
+  saveUiScaleTimer = window.setTimeout(async () => {
+    saveUiScaleTimer = null;
+    try {
+      await saveUIPreferences({ uiScale: uiScale.value });
+    } catch (error) {
+      console.warn('save ui preferences failed', error);
+    }
+  }, 260);
+}
+
+function handleAppContextMenu(event) {
+  const target = event.target;
+  if (target instanceof Element && target.closest('.file-manager-shell')) {
+    return;
+  }
+  event.preventDefault();
+}
+
+function minimizeWindow() {
+  callWindowRuntime('WindowMinimise');
+}
+
+function toggleMaximizeWindow() {
+  callWindowRuntime('WindowToggleMaximise');
+}
+
+function closeWindow() {
+  if (!callWindowRuntime('Quit')) {
+    window.close();
+  }
+}
+
+function callWindowRuntime(method) {
+  const runtime = window.runtime;
+  if (runtime && typeof runtime[method] === 'function') {
+    runtime[method]();
+    return true;
+  }
+  return false;
+}
+
 onBeforeUnmount(() => {
   document.body.style.userSelect = '';
+  window.removeEventListener('keydown', handleGlobalKeydown, true);
+  if (saveUiScaleTimer) {
+    window.clearTimeout(saveUiScaleTimer);
+  }
   if (moveHandler) {
     window.removeEventListener('mousemove', moveHandler);
   }
