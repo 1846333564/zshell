@@ -2,3 +2,7 @@ node_modules/
 dist/
 .vite/
 .DS_Store
+backend/internal/web/app/*
+!backend/internal/web/app/.gitkeep
+backend/build/
+backend/frontend/

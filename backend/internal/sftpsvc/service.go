@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"sort"
 	"strings"
 	"time"
 
@@ -95,6 +96,12 @@ func ListDirectory(conn model.Connection, remotePath string, timeout time.Durati
 			ModTime: item.ModTime().UTC().Format(time.RFC3339),
 		})
 	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].IsDir != entries[j].IsDir {
+			return entries[i].IsDir
+		}
+		return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name)
+	})
 
 	return resolved, entries, nil
 }

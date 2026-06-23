@@ -1,10 +1,5 @@
 <template>
   <div class="terminal-instance">
-    <div class="terminal-meta">
-      <span>{{ tabTitle }} · {{ connectionName }}</span>
-      <span>{{ online ? '在线' : '离线' }}</span>
-    </div>
-
     <div class="terminal-wrap">
       <div ref="terminalMount" style="width: 100%; height: 100%"></div>
     </div>
@@ -82,7 +77,7 @@ onMounted(async () => {
   await nextTick();
   fitAddon.fit();
 
-  term.writeln(`${props.tabTitle} 就绪，正在连接 ${props.connectionName} ...`);
+  term.writeln('正在连接...');
   await connect();
 
   term.onData((data) => {
@@ -141,7 +136,7 @@ watch(
 
 async function connect() {
   disconnect();
-  term.writeln(`\r\n[connecting] ${props.connectionName}`);
+  term.writeln('\r\n[connecting]');
 
   wsClient = createTerminalClient({
     connectionId: props.connectionId,

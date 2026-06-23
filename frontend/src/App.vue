@@ -1,91 +1,84 @@
 <template>
   <main class="app-shell">
-    <section v-if="!session.connected" class="connect-page">
-      <div class="connect-card panel">
-        <h1>zShell Lite</h1>
-        <p>轻量级本地 SSH / SFTP 工具</p>
+    <section class="desktop-layout">
+      <aside class="monitor-sidebar panel">
+        <MonitorPanel :session="activeSession" />
+      </aside>
 
-        <div class="connect-actions">
-          <button class="small-btn" @click="startNewConnection">新建连接</button>
-        </div>
+      <section class="main-workspace">
+        <header class="connection-tabbar panel">
+          <button
+            v-for="item in sessions"
+            :key="item.connectionId"
+            class="connection-tab"
+            :class="{ active: item.connectionId === activeSessionId }"
+            @click="activateSession(item.connectionId)"
+          >
+            <span class="tab-title">{{ item.connectionName }}</span>
+            <button class="tab-close" @click.stop="closeSession(item.connectionId)">x</button>
+          </button>
+          <button class="connection-tab add" title="新建连接" @click="showConnectHome">+</button>
+        </header>
 
-        <section class="history-panel">
-          <div class="history-head">
-            <h3>历史连接</h3>
-            <span>{{ historyConnections.length }} 条</span>
-          </div>
-
-          <div v-if="historyConnections.length === 0" class="empty-tip">
-            暂无历史连接，点击“新建连接”开始。
-          </div>
-
-          <div v-else class="history-list">
-            <article
-              v-for="item in historyConnections"
-              :key="item.id"
-              class="history-item"
-            >
-              <div class="history-meta">
-                <strong>{{ item.name }}</strong>
-                <span>{{ item.host }}:{{ item.port }} · {{ item.username }}</span>
+        <section v-if="!activeSession" class="connect-workspace panel">
+          <div class="connect-columns">
+            <section class="history-panel flat">
+              <div class="history-head">
+                <h3>已保存连接</h3>
+                <span>{{ configLoading ? '加载中' : `${savedConnections.length} 条` }}</span>
               </div>
-              <div class="history-actions">
-                <button class="mini-btn" @click="fillFromHistory(item)">填充</button>
-                <button class="mini-btn danger" @click="removeHistory(item.id)">删除</button>
+
+              <div v-if="savedConnections.length === 0" class="empty-tip">
+                暂无保存的连接。
               </div>
-            </article>
+
+              <div v-else class="history-list">
+                <article
+                  v-for="item in savedConnections"
+                  :key="item.id"
+                  class="history-item"
+                  :class="{ editing: item.id === editingConnectionId }"
+                >
+                  <div class="history-meta">
+                    <strong>{{ item.name }}</strong>
+                    <span>{{ item.host }}:{{ item.port }} · {{ item.username }} · {{ authLabel(item.authMethod) }}</span>
+                  </div>
+                  <div class="history-actions">
+                    <button class="mini-btn" :disabled="busy" @click="connectFromSaved(item)">连接</button>
+                    <button class="mini-btn" :disabled="busy" @click="editSavedConnection(item)">编辑</button>
+                    <button class="mini-btn danger" :disabled="busy" @click="removeSavedConnection(item)">删除</button>
+                  </div>
+                </article>
+              </div>
+            </section>
+
+            <section class="connect-form-pane">
+              <ConnectionForm
+                :busy="busy"
+                :error="connectError || configError"
+                :initial-value="draftConnection"
+                :mode="editingConnectionId ? 'edit' : 'create'"
+                :submit-label="editingConnectionId ? '保存并连接' : '保存并连接'"
+                :title="editingConnectionId ? '编辑连接' : '连接配置'"
+                @connect="handleConnect"
+              />
+            </section>
           </div>
         </section>
 
-        <ConnectionForm
-          :busy="busy"
-          :error="connectError"
-          :initial-value="draftConnection"
-          @connect="handleConnect"
-        />
-      </div>
-    </section>
-
-    <section v-else class="workspace-page">
-      <header class="workspace-header panel">
-        <div>
-          <h2>{{ session.connectionName }}</h2>
-          <p>{{ session.host }}:{{ session.port }} · {{ session.username }}</p>
-        </div>
-        <div class="header-actions">
-          <button class="small-btn" @click="disconnectToNewConnection">新建连接</button>
-          <button class="small-btn danger" @click="disconnectWorkspace">断开连接</button>
-        </div>
-      </header>
-
-      <section class="workspace-body">
-        <aside class="workspace-left panel">
-          <h3>监控 / 信息区（预留）</h3>
-          <p>后续可放置 CPU、内存、网络、告警等信息。</p>
-          <ul>
-            <li>连接名: {{ session.connectionName }}</li>
-            <li>服务器: {{ session.host }}</li>
-            <li>端口: {{ session.port }}</li>
-            <li>用户: {{ session.username }}</li>
-          </ul>
-        </aside>
-
-        <section class="workspace-right" ref="rightPaneRef" :class="{ dragging: isDragging }">
-          <div class="panel console-panel" :style="{ height: `calc(${consoleHeightPercent}% - 5px)` }">
+        <section v-else class="active-workspace">
+          <div class="terminal-band panel" :style="{ height: `calc(${consoleHeightPercent}% - 5px)` }">
             <TerminalTabs
-              :connection-id="session.connectionId"
-              :connection-name="session.connectionName"
+              :key="activeSession.connectionId"
+              :connection-id="activeSession.connectionId"
+              :connection-name="activeSession.connectionName"
             />
           </div>
 
-          <div
-            class="splitter"
-            title="拖拽调整控制台高度"
-            @mousedown.prevent="startDrag"
-          ></div>
+          <div class="splitter" title="拖拽调整控制台高度" @mousedown.prevent="startDrag"></div>
 
-          <div class="panel file-panel workspace-files">
-            <FileManager :connection-id="session.connectionId" />
+          <div class="file-band panel">
+            <FileManager :key="activeSession.connectionId" :connection-id="activeSession.connectionId" />
           </div>
         </section>
       </section>
@@ -94,160 +87,209 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import ConnectionForm from './components/ConnectionForm.vue';
 import FileManager from './components/FileManager.vue';
+import MonitorPanel from './components/MonitorPanel.vue';
 import TerminalTabs from './components/TerminalTabs.vue';
-import { createConnection, testConnection } from './services/apiClient';
-
-const CONNECTION_HISTORY_KEY = 'zshell.connection.history.v1';
+import {
+  deleteConnectionConfig,
+  listConnectionConfigs,
+  saveConnectionConfig,
+  testConnection,
+  updateConnectionConfig,
+} from './services/apiClient';
 
 const busy = ref(false);
+const configLoading = ref(false);
+const configError = ref('');
 const connectError = ref('');
-const rightPaneRef = ref(null);
-const consoleHeightPercent = ref(62);
+const consoleHeightPercent = ref(58);
 const isDragging = ref(false);
-const historyConnections = ref([]);
+const savedConnections = ref([]);
 const draftConnection = ref(defaultConnectionDraft());
+const editingConnectionId = ref('');
+const sessions = ref([]);
+const activeSessionId = ref('');
 
-const session = reactive({
-  connected: false,
-  connectionId: '',
-  connectionName: '',
-  host: '',
-  port: 22,
-  username: '',
-});
+const activeSession = computed(() => sessions.value.find((item) => item.connectionId === activeSessionId.value) || null);
 
 async function handleConnect(payload) {
   busy.value = true;
   connectError.value = '';
-
-  saveHistoryEntry(payload);
+  configError.value = '';
 
   try {
-    const created = await createConnection(payload);
-    const connectionId = created.connection.id;
+    const targetId = editingConnectionId.value || payload.id || '';
+    const request = normalizeConnectionPayload({ ...payload, id: targetId });
+    const result = targetId ? await updateConnectionConfig(request) : await saveConnectionConfig(request);
+    const connection = normalizeConnection(result.connection);
 
-    await testConnection(connectionId);
-
-    session.connected = true;
-    session.connectionId = connectionId;
-    session.connectionName = payload.name;
-    session.host = payload.host;
-    session.port = payload.port;
-    session.username = payload.username;
-
-    consoleHeightPercent.value = 62;
+    await loadSavedConnections();
+    await testConnection(connection.id);
+    openSession(connection);
+    startNewConnection();
   } catch (error) {
     connectError.value = error instanceof Error ? error.message : '连接失败';
-    disconnectWorkspace();
   } finally {
     busy.value = false;
   }
 }
 
-function disconnectWorkspace() {
-  session.connected = false;
-  session.connectionId = '';
-  session.connectionName = '';
-  session.host = '';
-  session.port = 22;
-  session.username = '';
+async function connectFromSaved(item) {
+  busy.value = true;
+  connectError.value = '';
+  configError.value = '';
+  activeSessionId.value = '';
+
+  try {
+    await testConnection(item.id);
+    openSession(item);
+  } catch (error) {
+    connectError.value = error instanceof Error ? error.message : '连接失败';
+  } finally {
+    busy.value = false;
+  }
 }
 
-function disconnectToNewConnection() {
-  disconnectWorkspace();
+function openSession(connection) {
+  const session = {
+    connectionId: connection.id,
+    connectionName: connection.name,
+    host: connection.host,
+    port: Number(connection.port) || 22,
+    username: connection.username,
+    authMethod: connection.authMethod || 'password',
+  };
+
+  sessions.value = [...sessions.value.filter((item) => item.connectionId !== session.connectionId), session];
+  activeSessionId.value = session.connectionId;
+  consoleHeightPercent.value = 58;
+}
+
+function activateSession(connectionId) {
+  activeSessionId.value = connectionId;
+}
+
+function closeSession(connectionId) {
+  const index = sessions.value.findIndex((item) => item.connectionId === connectionId);
+  sessions.value = sessions.value.filter((item) => item.connectionId !== connectionId);
+  if (activeSessionId.value !== connectionId) {
+    return;
+  }
+  const next = sessions.value[Math.max(0, index - 1)];
+  activeSessionId.value = next?.connectionId || '';
+}
+
+function showConnectHome() {
+  activeSessionId.value = '';
   startNewConnection();
 }
 
 function startNewConnection() {
   draftConnection.value = defaultConnectionDraft();
+  editingConnectionId.value = '';
   connectError.value = '';
 }
 
-function fillFromHistory(item) {
+function editSavedConnection(item) {
+  activeSessionId.value = '';
+  editingConnectionId.value = item.id;
+  connectError.value = '';
   draftConnection.value = {
+    id: item.id,
     name: item.name,
     host: item.host,
-    port: item.port,
+    port: Number(item.port) || 22,
     username: item.username,
-    password: item.password,
+    password: '',
+    authMethod: item.authMethod || 'password',
   };
-  connectError.value = '';
 }
 
-function removeHistory(id) {
-  historyConnections.value = historyConnections.value.filter((item) => item.id !== id);
-  persistHistory();
-}
-
-function saveHistoryEntry(payload) {
-  const id = `${payload.host}:${payload.port}:${payload.username}`;
-  const entry = {
-    id,
-    name: payload.name,
-    host: payload.host,
-    port: Number(payload.port) || 22,
-    username: payload.username,
-    password: payload.password || '',
-    lastUsedAt: Date.now(),
-  };
-
-  const next = historyConnections.value.filter((item) => item.id !== id);
-  next.unshift(entry);
-  historyConnections.value = next.slice(0, 50);
-  persistHistory();
-}
-
-function persistHistory() {
-  localStorage.setItem(CONNECTION_HISTORY_KEY, JSON.stringify(historyConnections.value));
-}
-
-function loadHistory() {
-  try {
-    const raw = localStorage.getItem(CONNECTION_HISTORY_KEY);
-    if (!raw) {
-      historyConnections.value = [];
-      return;
-    }
-
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) {
-      historyConnections.value = [];
-      return;
-    }
-
-    historyConnections.value = parsed
-      .filter((item) => item && item.id && item.host && item.username)
-      .map((item) => ({
-        id: String(item.id),
-        name: String(item.name || '未命名连接'),
-        host: String(item.host),
-        port: Number(item.port) || 22,
-        username: String(item.username),
-        password: String(item.password || ''),
-        lastUsedAt: Number(item.lastUsedAt) || 0,
-      }))
-      .sort((a, b) => b.lastUsedAt - a.lastUsedAt)
-      .slice(0, 50);
-  } catch {
-    historyConnections.value = [];
+async function removeSavedConnection(item) {
+  if (!window.confirm(`删除连接 "${item.name}"？`)) {
+    return;
   }
+
+  busy.value = true;
+  connectError.value = '';
+  configError.value = '';
+
+  try {
+    await deleteConnectionConfig(item.id);
+    savedConnections.value = savedConnections.value.filter((connection) => connection.id !== item.id);
+    sessions.value = sessions.value.filter((session) => session.connectionId !== item.id);
+    if (activeSessionId.value === item.id) {
+      activeSessionId.value = '';
+    }
+    if (editingConnectionId.value === item.id) {
+      startNewConnection();
+    }
+  } catch (error) {
+    configError.value = error instanceof Error ? error.message : '删除失败';
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function loadSavedConnections() {
+  configLoading.value = true;
+  configError.value = '';
+
+  try {
+    const result = await listConnectionConfigs();
+    const connections = Array.isArray(result.connections) ? result.connections : [];
+    savedConnections.value = connections.map(normalizeConnection).filter((item) => item.id);
+  } catch (error) {
+    configError.value = error instanceof Error ? error.message : '读取保存连接失败';
+    savedConnections.value = [];
+  } finally {
+    configLoading.value = false;
+  }
+}
+
+function normalizeConnection(connection) {
+  return {
+    id: String(connection?.id || ''),
+    name: String(connection?.name || '未命名连接'),
+    host: String(connection?.host || ''),
+    port: Number(connection?.port) || 22,
+    username: String(connection?.username || ''),
+    authMethod: String(connection?.authMethod || 'password'),
+  };
+}
+
+function normalizeConnectionPayload(payload) {
+  return {
+    id: String(payload.id || ''),
+    name: String(payload.name || '').trim(),
+    host: String(payload.host || '').trim(),
+    port: Number(payload.port) || 22,
+    username: String(payload.username || '').trim(),
+    password: payload.authMethod === 'password' ? String(payload.password || '') : '',
+    authMethod: payload.authMethod || 'password',
+  };
 }
 
 function defaultConnectionDraft() {
   return {
+    id: '',
     name: '默认服务器',
     host: '127.0.0.1',
     port: 22,
     username: 'root',
     password: '',
+    authMethod: 'password',
   };
 }
 
+function authLabel(authMethod) {
+  return authMethod === 'id_rsa' ? '~/.ssh/id_rsa' : '密码';
+}
+
 onMounted(() => {
-  loadHistory();
+  loadSavedConnections();
 });
 
 let moveHandler = null;
@@ -255,26 +297,23 @@ let upHandler = null;
 
 function startDrag(event) {
   event.preventDefault();
-
-  const pane = rightPaneRef.value;
-  if (!pane) {
-    return;
-  }
-
   isDragging.value = true;
   document.body.style.userSelect = 'none';
 
-  const onMove = (event) => {
+  const onMove = (moveEvent) => {
+    const pane = document.querySelector('.active-workspace');
+    if (!pane) {
+      return;
+    }
     const rect = pane.getBoundingClientRect();
-    const offsetY = event.clientY - rect.top;
+    const offsetY = moveEvent.clientY - rect.top;
     const percent = (offsetY / rect.height) * 100;
-    consoleHeightPercent.value = Math.min(85, Math.max(30, percent));
+    consoleHeightPercent.value = Math.min(82, Math.max(28, percent));
   };
 
   const onUp = () => {
     isDragging.value = false;
     document.body.style.userSelect = '';
-
     if (moveHandler) {
       window.removeEventListener('mousemove', moveHandler);
     }
@@ -292,9 +331,7 @@ function startDrag(event) {
 }
 
 onBeforeUnmount(() => {
-  isDragging.value = false;
   document.body.style.userSelect = '';
-
   if (moveHandler) {
     window.removeEventListener('mousemove', moveHandler);
   }

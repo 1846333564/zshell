@@ -5,13 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"path"
 	"strings"
 	"time"
 
+	"zshell/backend/internal/configstore"
 	"zshell/backend/internal/model"
+	"zshell/backend/internal/monitorsvc"
 	"zshell/backend/internal/sftpsvc"
 	"zshell/backend/internal/sshsvc"
 	"zshell/backend/internal/store"
@@ -19,22 +22,41 @@ import (
 )
 
 type Server struct {
-	store      *store.MemoryStore
-	sshTimeout time.Duration
-	terminalWS *ws.TerminalHandler
+	store       *store.MemoryStore
+	configStore *configstore.Store
+	sshTimeout  time.Duration
+	terminalWS  *ws.TerminalHandler
+	monitor     *monitorsvc.Service
 }
 
 func NewServer(connStore *store.MemoryStore, sshTimeout time.Duration) *Server {
+	cfgStore, err := configstore.NewDefault()
+	if err != nil {
+		log.Printf("connection config store unavailable: %v", err)
+	} else {
+		connections, err := cfgStore.Load()
+		if err != nil {
+			log.Printf("load connection config failed: %v", err)
+		} else {
+			for _, conn := range connections {
+				connStore.Put(conn)
+			}
+		}
+	}
+
 	return &Server{
-		store:      connStore,
-		sshTimeout: sshTimeout,
-		terminalWS: ws.NewTerminalHandler(connStore, sshTimeout),
+		store:       connStore,
+		configStore: cfgStore,
+		sshTimeout:  sshTimeout,
+		terminalWS:  ws.NewTerminalHandler(connStore, sshTimeout),
+		monitor:     monitorsvc.NewService(),
 	}
 }
 
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/connections", s.handleConnections)
+	mux.HandleFunc("/api/config/connections", s.handleConnectionConfigs)
 	mux.HandleFunc("/api/ssh/test", s.handleSSHTest)
 	mux.HandleFunc("/api/ssh/exec", s.handleSSHExec)
 	mux.HandleFunc("/api/sftp/list", s.handleSFTPList)
@@ -42,10 +64,12 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/sftp/download", s.handleSFTPDownload)
 	mux.HandleFunc("/api/sftp/archive", s.handleSFTPArchive)
 	mux.HandleFunc("/api/sftp/transfer", s.handleSFTPTransfer)
+	mux.HandleFunc("/api/monitor/snapshot", s.handleMonitorSnapshot)
 	mux.Handle("/ws/terminal", s.terminalWS)
 }
 
 type createConnectionRequest struct {
+	ID         string `json:"id"`
 	Name       string `json:"name"`
 	Host       string `json:"host"`
 	Port       int    `json:"port"`
@@ -76,6 +100,11 @@ type sftpTransferRequest struct {
 	Items              []sftpsvc.TransferItem `json:"items"`
 }
 
+type monitorSnapshotRequest struct {
+	ConnectionID string `json:"connectionId"`
+	ProcessSort  string `json:"processSort"`
+}
+
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -93,36 +122,98 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		writeJSON(w, http.StatusOK, map[string]any{"connections": s.store.List()})
 	case http.MethodPost:
-		var req createConnectionRequest
-		if err := decodeJSON(r, &req); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-
-		if err := validateConnectionRequest(req); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-
-		if req.Port == 0 {
-			req.Port = 22
-		}
-		authMethod := normalizeAuthMethod(req.AuthMethod)
-
-		conn := model.Connection{
-			Name:       req.Name,
-			Host:       req.Host,
-			Port:       req.Port,
-			Username:   req.Username,
-			Password:   req.Password,
-			AuthMethod: authMethod,
-		}
-
-		created := s.store.Add(conn)
-		writeJSON(w, http.StatusCreated, map[string]any{"connection": created.Summary()})
+		s.createConnectionConfig(w, r)
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func (s *Server) handleConnectionConfigs(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, map[string]any{"connections": s.store.List()})
+	case http.MethodPost:
+		s.createConnectionConfig(w, r)
+	case http.MethodPut:
+		s.updateConnectionConfig(w, r)
+	case http.MethodDelete:
+		s.deleteConnectionConfig(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func (s *Server) createConnectionConfig(w http.ResponseWriter, r *http.Request) {
+	var req createConnectionRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	req.ID = ""
+
+	if err := validateConnectionRequest(req, model.Connection{}); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	conn := connectionFromRequest(req, model.Connection{})
+	created := s.store.Put(conn)
+	if err := s.saveConnectionConfigs(); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"connection": created.Summary()})
+}
+
+func (s *Server) updateConnectionConfig(w http.ResponseWriter, r *http.Request) {
+	var req createConnectionRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if strings.TrimSpace(req.ID) == "" {
+		writeError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	existing, ok := s.store.Get(req.ID)
+	if !ok {
+		writeError(w, http.StatusNotFound, "connection config not found")
+		return
+	}
+
+	if err := validateConnectionRequest(req, existing); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	updated := s.store.Put(connectionFromRequest(req, existing))
+	if err := s.saveConnectionConfigs(); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"connection": updated.Summary()})
+}
+
+func (s *Server) deleteConnectionConfig(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.URL.Query().Get("id"))
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	if !s.store.Delete(id) {
+		writeError(w, http.StatusNotFound, "connection config not found")
+		return
+	}
+	if err := s.saveConnectionConfigs(); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (s *Server) handleSSHTest(w http.ResponseWriter, r *http.Request) {
@@ -375,15 +466,68 @@ func (s *Server) handleSFTPTransfer(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-func validateConnectionRequest(req createConnectionRequest) error {
+func (s *Server) handleMonitorSnapshot(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req monitorSnapshotRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	conn, ok := s.store.Get(req.ConnectionID)
+	if !ok {
+		writeError(w, http.StatusNotFound, "connection not found")
+		return
+	}
+
+	snapshot, err := s.monitor.Snapshot(conn, req.ProcessSort, s.sshTimeout)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"snapshot": snapshot})
+}
+
+func connectionFromRequest(req createConnectionRequest, existing model.Connection) model.Connection {
+	authMethod := normalizeAuthMethod(req.AuthMethod)
+	password := strings.TrimSpace(req.Password)
+	if authMethod == "password" && password == "" {
+		password = existing.Password
+	}
+	if authMethod != "password" {
+		password = ""
+	}
+
+	id := strings.TrimSpace(existing.ID)
+	if id == "" {
+		id = strings.TrimSpace(req.ID)
+	}
+
+	return model.Connection{
+		ID:         id,
+		Name:       strings.TrimSpace(req.Name),
+		Host:       strings.TrimSpace(req.Host),
+		Port:       req.Port,
+		Username:   strings.TrimSpace(req.Username),
+		Password:   password,
+		AuthMethod: authMethod,
+	}
+}
+
+func validateConnectionRequest(req createConnectionRequest, existing model.Connection) error {
 	if strings.TrimSpace(req.Name) == "" {
 		return errors.New("name is required")
 	}
 	if strings.TrimSpace(req.Host) == "" {
 		return errors.New("host is required")
 	}
-	if req.Port < 0 || req.Port > 65535 {
-		return errors.New("port must be between 0 and 65535")
+	if req.Port < 1 || req.Port > 65535 {
+		return errors.New("port must be between 1 and 65535")
 	}
 	if strings.TrimSpace(req.Username) == "" {
 		return errors.New("username is required")
@@ -392,8 +536,18 @@ func validateConnectionRequest(req createConnectionRequest) error {
 	if authMethod != "password" && authMethod != "id_rsa" {
 		return errors.New("authMethod must be password or id_rsa")
 	}
-	if authMethod == "password" && strings.TrimSpace(req.Password) == "" {
+	if authMethod == "password" && strings.TrimSpace(req.Password) == "" && strings.TrimSpace(existing.Password) == "" {
 		return errors.New("password is required")
+	}
+	return nil
+}
+
+func (s *Server) saveConnectionConfigs() error {
+	if s.configStore == nil {
+		return errors.New("connection config store unavailable")
+	}
+	if err := s.configStore.Save(s.store.ListFull()); err != nil {
+		return err
 	}
 	return nil
 }
@@ -466,7 +620,7 @@ func writeError(w http.ResponseWriter, status int, message string) {
 func WithCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
 		if r.Method == http.MethodOptions {
