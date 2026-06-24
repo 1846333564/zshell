@@ -14,7 +14,7 @@ Vue components for connection forms, monitor panel, terminal tabs/panels, and fi
 
 ## Current State
 
-Terminal and monitor panels are integrated. `ConnectionForm.vue` supports create/edit modes. `TerminalPanel.vue` handles terminal-focused font sizing and terminal clipboard shortcuts. `FileManager.vue` uses a top path input, a collapsible path navigator with fixed `/` root visibility, resolved home paths such as `/root`, basename-only tree labels, color-only opened markers, right-side centered fold buttons, full context-menu file actions, drag/drop upload, picker upload, compact upload progress with total/per-file/speed details, and resizable file columns.
+Terminal and monitor panels are integrated. `ConnectionForm.vue` supports create/edit modes. `TerminalPanel.vue` handles terminal-focused font sizing, terminal clipboard shortcuts, and a terminal context menu for copy/paste/clear/reconnect. `FileManager.vue` uses a top path input, a collapsible path navigator with fixed `/` root visibility, resolved home paths such as `/root`, basename-only tree labels, color-only opened markers, right-side centered fold buttons, full context-menu file actions, drag/drop upload, picker upload, compact upload progress with total/per-file/speed details, and resizable file columns.
 
 ## Known Work
 

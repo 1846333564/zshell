@@ -1,13 +1,27 @@
 <template>
-  <div class="terminal-instance">
+  <div class="terminal-instance" @click="hideTerminalMenu" @contextmenu.prevent.stop="openTerminalMenu">
     <div class="terminal-wrap">
       <div ref="terminalMount" style="width: 100%; height: 100%"></div>
+    </div>
+
+    <div
+      v-if="terminalMenu.visible"
+      class="context-menu terminal-context-menu"
+      :style="{ left: `${terminalMenu.x}px`, top: `${terminalMenu.y}px` }"
+      @click.stop
+      @contextmenu.prevent.stop
+    >
+      <button :disabled="!terminalMenu.hasSelection" @click="copyFromTerminalMenu">复制</button>
+      <button :disabled="!online" @click="pasteFromTerminalMenu">粘贴</button>
+      <div class="context-menu-separator"></div>
+      <button @click="clearFromTerminalMenu">清屏</button>
+      <button @click="reconnectFromTerminalMenu">重新连接</button>
     </div>
   </div>
 </template>
 
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
@@ -32,6 +46,12 @@ const props = defineProps({
 	},
 });
 const terminalMount = ref(null);
+const terminalMenu = reactive({
+  visible: false,
+  x: 0,
+  y: 0,
+  hasSelection: false,
+});
 
 let term;
 let fitAddon;
@@ -246,5 +266,36 @@ function pasteClipboardToTerminal() {
       wsClient.sendInput(text);
     }
   }).catch(() => {});
+}
+
+function openTerminalMenu(event) {
+  terminalMenu.visible = true;
+  terminalMenu.x = Math.min(event.clientX, window.innerWidth - 170);
+  terminalMenu.y = Math.min(event.clientY, window.innerHeight - 176);
+  terminalMenu.hasSelection = Boolean(term?.getSelection());
+}
+
+function hideTerminalMenu() {
+  terminalMenu.visible = false;
+}
+
+function copyFromTerminalMenu() {
+  copyTerminalSelection();
+  hideTerminalMenu();
+}
+
+function pasteFromTerminalMenu() {
+  pasteClipboardToTerminal();
+  hideTerminalMenu();
+}
+
+function clearFromTerminalMenu() {
+  term?.clear();
+  hideTerminalMenu();
+}
+
+async function reconnectFromTerminalMenu() {
+  hideTerminalMenu();
+  await connect();
 }
 </script>
