@@ -44,8 +44,8 @@
       </div>
     </header>
 
-    <section class="desktop-layout">
-      <aside class="monitor-sidebar panel">
+    <section class="desktop-layout" :class="{ 'home-layout': !activeSession }">
+      <aside v-if="activeSession" class="monitor-sidebar panel">
         <MonitorPanel :session="activeSession" />
       </aside>
 
@@ -249,7 +249,6 @@ async function connectFromSaved(item) {
   busy.value = true;
   connectError.value = '';
   configError.value = '';
-  activeSessionId.value = '';
 
   try {
     await testConnection(item.id);

@@ -2,7 +2,7 @@
 
 ## 项目概览
 
-zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/WebView2、Vue、xterm.js 和基于 SSH 的 SFTP。当前版本从 `VERSION` 文件读取，本次初始版本为 `0.0.1`。发布产物输出到项目根目录的 `release` 文件夹，命名格式为 `zshell.<版本号>.exe`。
+zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/WebView2、Vue、xterm.js 和基于 SSH 的 SFTP。当前版本从 `VERSION` 文件读取，本次版本为 `0.0.2`，版本号从 `0.0.1` 起步。发布产物输出到项目根目录的 `release` 文件夹，命名格式为 `zshell.<版本号>.exe`。
 
 ## 当前架构
 
@@ -36,6 +36,7 @@ zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/Web
 - 终端聚焦时 `Ctrl +` / `Ctrl -` 调整字体，非终端 UI 缩放持久化，终端支持 `Ctrl+Shift+C` / `Ctrl+Shift+V` 剪贴板快捷键。
 - 交互式终端使用 SSH keepalive 和服务端 WebSocket ping/pong，降低空闲或后台断连概率。
 - Wails 窗口为无边框窗口，带自定义 zShell 顶栏、占位的 `配置管理` 和 `UI管理` 菜单、自定义窗口控制和应用风格滚动条。
+- 未连接首页不渲染左侧监控栏；连接失败信息限制在连接配置面板内换行，避免撑开首页两栏布局。
 
 ## 当前缺口
 

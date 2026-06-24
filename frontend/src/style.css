@@ -220,6 +220,10 @@ body,
   overflow: hidden;
 }
 
+.desktop-layout.home-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .monitor-sidebar {
   min-height: 0;
   padding: 10px;
@@ -312,13 +316,17 @@ body,
 }
 
 .connect-columns {
+  width: min(100%, 960px);
+  margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(300px, 420px) minmax(320px, 520px);
+  grid-template-columns: minmax(0, 420px) minmax(0, 520px);
   gap: 14px;
   align-items: start;
 }
 
 .connect-form-pane {
+  min-width: 0;
+  align-self: start;
   border: 1px solid rgba(146, 202, 255, 0.18);
   border-radius: 8px;
   padding: 14px;
@@ -326,6 +334,9 @@ body,
 }
 
 .history-panel.flat {
+  min-width: 0;
+  align-self: start;
+  height: fit-content;
   margin: 0;
   border-radius: 8px;
 }
@@ -412,6 +423,7 @@ body,
 }
 
 .history-item {
+  min-width: 0;
   border: 1px solid rgba(146, 202, 255, 0.18);
   border-radius: 8px;
   padding: 8px;
@@ -445,6 +457,7 @@ body,
 }
 
 .history-actions {
+  flex: 0 0 auto;
   display: flex;
   gap: 6px;
 }
@@ -906,6 +919,8 @@ body,
   font-size: 13px;
   margin-top: 10px;
   min-height: 18px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .file-head {
@@ -1653,6 +1668,10 @@ body,
   }
 
   .file-split {
+    grid-template-columns: 1fr;
+  }
+
+  .connect-columns {
     grid-template-columns: 1fr;
   }
 
