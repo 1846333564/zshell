@@ -75,6 +75,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/sftp/file/write", s.handleSFTPFileWrite)
 	mux.HandleFunc("/api/sftp/archive", s.handleSFTPArchive)
 	mux.HandleFunc("/api/sftp/transfer", s.handleSFTPTransfer)
+	mux.HandleFunc("/api/sftp/delete", s.handleSFTPDelete)
 	mux.HandleFunc("/api/monitor/snapshot", s.handleMonitorSnapshot)
 	mux.Handle("/ws/terminal", s.terminalWS)
 }
@@ -120,6 +121,11 @@ type sftpTransferRequest struct {
 	TargetPath         string                 `json:"targetPath"`
 	Action             string                 `json:"action"`
 	Items              []sftpsvc.TransferItem `json:"items"`
+}
+
+type sftpDeleteRequest struct {
+	ConnectionID string                 `json:"connectionId"`
+	Items        []sftpsvc.TransferItem `json:"items"`
 }
 
 type monitorSnapshotRequest struct {
@@ -620,6 +626,42 @@ func (s *Server) handleSFTPTransfer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := sftpsvc.TransferItems(sourceConn, targetConn, req.TargetPath, req.Items, action, s.sshTimeout)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleSFTPDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req sftpDeleteRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if strings.TrimSpace(req.ConnectionID) == "" {
+		writeError(w, http.StatusBadRequest, "connectionId is required")
+		return
+	}
+	if len(req.Items) == 0 {
+		writeError(w, http.StatusBadRequest, "items are required")
+		return
+	}
+
+	conn, ok := s.store.Get(req.ConnectionID)
+	if !ok {
+		writeError(w, http.StatusNotFound, "connection not found")
+		return
+	}
+
+	result, err := sftpsvc.DeleteItems(conn, req.Items, s.sshTimeout)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return

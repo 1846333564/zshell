@@ -72,6 +72,18 @@ type TransferBatchResult struct {
 	TotalSize   int64            `json:"totalSize"`
 }
 
+type DeleteResult struct {
+	RemotePath string `json:"remotePath"`
+	IsDir      bool   `json:"isDir"`
+	Size       int64  `json:"size"`
+}
+
+type DeleteBatchResult struct {
+	OK        bool           `json:"ok"`
+	Items     []DeleteResult `json:"items"`
+	TotalSize int64          `json:"totalSize"`
+}
+
 func ListDirectory(conn model.Connection, remotePath string, timeout time.Duration) (string, []Entry, error) {
 	client, err := sshsvc.NewClient(conn, timeout)
 	if err != nil {
@@ -513,6 +525,68 @@ func TransferItems(sourceConn model.Connection, targetConn model.Connection, tar
 	return result, nil
 }
 
+func DeleteItems(conn model.Connection, items []TransferItem, timeout time.Duration) (DeleteBatchResult, error) {
+	if len(items) == 0 {
+		return DeleteBatchResult{}, fmt.Errorf("no delete items")
+	}
+
+	sshClient, err := sshsvc.NewClient(conn, timeout)
+	if err != nil {
+		return DeleteBatchResult{}, err
+	}
+	defer sshClient.Close()
+
+	sftpClient, err := sftp.NewClient(sshClient)
+	if err != nil {
+		return DeleteBatchResult{}, fmt.Errorf("create sftp client: %w", err)
+	}
+	defer sftpClient.Close()
+
+	result := DeleteBatchResult{
+		OK:    true,
+		Items: make([]DeleteResult, 0, len(items)),
+	}
+
+	for _, item := range items {
+		requestedPath := normalizeRemotePath(item.Path)
+		if requestedPath == "~" || isProtectedDeletePath(requestedPath) {
+			return DeleteBatchResult{}, fmt.Errorf("refuse to delete protected path: %s", requestedPath)
+		}
+
+		remotePath, err := resolveRemotePath(sftpClient, item.Path)
+		if err != nil {
+			return DeleteBatchResult{}, fmt.Errorf("resolve delete path %s: %w", item.Path, err)
+		}
+		if isProtectedDeletePath(remotePath) {
+			return DeleteBatchResult{}, fmt.Errorf("refuse to delete protected path: %s", remotePath)
+		}
+
+		stat, err := sftpClient.Stat(remotePath)
+		if err != nil {
+			return DeleteBatchResult{}, fmt.Errorf("stat delete path %s: %w", remotePath, err)
+		}
+
+		deleteResult := DeleteResult{
+			RemotePath: remotePath,
+			IsDir:      stat.IsDir(),
+			Size:       stat.Size(),
+		}
+		if stat.IsDir() {
+			deleteResult.Size = 0
+		} else {
+			result.TotalSize += stat.Size()
+		}
+
+		if err := removeRemote(sftpClient, remotePath); err != nil {
+			return DeleteBatchResult{}, err
+		}
+
+		result.Items = append(result.Items, deleteResult)
+	}
+
+	return result, nil
+}
+
 func isSameConnection(left model.Connection, right model.Connection) bool {
 	if left.ID != "" || right.ID != "" {
 		return left.ID == right.ID
@@ -797,6 +871,10 @@ func copyRemoteDir(sourceClient *sftp.Client, targetClient *sftp.Client, sourceP
 }
 
 func removeRemote(client *sftp.Client, remotePath string) error {
+	if isProtectedDeletePath(remotePath) {
+		return fmt.Errorf("refuse to remove protected path: %s", remotePath)
+	}
+
 	stat, err := client.Stat(remotePath)
 	if err != nil {
 		return fmt.Errorf("stat remote path %s: %w", remotePath, err)
@@ -823,6 +901,11 @@ func removeRemote(client *sftp.Client, remotePath string) error {
 		return fmt.Errorf("remove remote directory %s: %w", remotePath, err)
 	}
 	return nil
+}
+
+func isProtectedDeletePath(remotePath string) bool {
+	cleaned := path.Clean(strings.TrimSpace(remotePath))
+	return cleaned == "" || cleaned == "." || cleaned == "/"
 }
 
 type downloadReadCloser struct {

@@ -2,7 +2,7 @@
 
 ## 项目概览
 
-zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/WebView2、Vue、xterm.js 和基于 SSH 的 SFTP。当前版本从 `VERSION` 文件读取，本次版本为 `0.1.2`，版本号从 `0.0.1` 起步。发布产物输出到项目根目录的 `release` 文件夹，命名格式为 `zshell.<版本号>.exe`；本地 `release` 历史包不会自动删除。
+zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/WebView2、Vue、xterm.js 和基于 SSH 的 SFTP。当前版本从 `VERSION` 文件读取，本次版本为 `0.1.3`，版本号从 `0.0.1` 起步。发布产物输出到项目根目录的 `release` 文件夹，命名格式为 `zshell.<版本号>.exe`；本地 `release` 历史包不会自动删除。
 
 ## 当前架构
 
@@ -14,13 +14,13 @@ zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/Web
 - `backend/internal/configstore` 使用 Windows DPAPI 在当前用户配置目录中加密保存连接配置。
 - `frontend/src/App.vue` 管理双栏桌面壳：左侧监控面板、右侧连接标签、终端和文件区域，并提供“关于 zShell”和“检查更新”弹窗。
 - `build-windows.ps1` 是 release 构建入口，会失败即停地执行 npm、Go 和 Wails 命令，读取 `VERSION`，并输出当前版本 exe 到 `release` 文件夹，不清理旧版本 exe。
-- `.github/workflows/release.yml` 用 GitHub Actions 在 tag 或手动触发时构建 Windows exe，并创建或更新 GitHub Release 资产；`.github/release-names.json` 可为指定版本配置 Release 标题，本次 `0.1.2` 标题为“修复文件复制粘贴逻辑”。
+- `.github/workflows/release.yml` 用 GitHub Actions 在 tag 或手动触发时构建 Windows exe，并创建或更新 GitHub Release 资产；`.github/release-names.json` 可为指定版本配置 Release 标题，本次 `0.1.3` 标题为“增加远程文件强制删除”。
 
 ## 已实现
 
 - 密码和当前 Windows 用户 `~/.ssh/id_rsa` SSH 认证。
 - WebSocket 交互式 PTY 终端。
-- SFTP 浏览、上传、下载、归档下载、远程文本读写和远程复制/移动；复制粘贴会避开源路径和已有同名目标，避免表现成剪切或覆盖。
+- SFTP 浏览、上传、下载、归档下载、远程文本读写、远程复制/移动和选中项强制删除；复制粘贴会避开源路径和已有同名目标，避免表现成剪切或覆盖。
 - Wails Windows 可执行文件打包。
 - 基于 `VERSION` 的版本号管理；默认后续版本只递增最后一位。
 - GitHub Release 更新检查和自更新链路，包含 API 限流 fallback、下载重试、校验和手动下载入口。
@@ -29,7 +29,7 @@ zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/Web
 - 后端管理的保存连接配置增删改查，配置使用 Windows DPAPI 加密落盘。
 - 前端保存连接编辑。
 - 连接标签只显示连接名。
-- 文件管理器路径导航：固定根路径 `/`、解析后的 home 路径如 `/root`、树节点只显示 basename、打开状态用颜色标记、右侧居中折叠按钮、完整右键菜单动作和可调整文件列表列宽。
+- 文件管理器路径导航：固定根路径 `/`、解析后的 home 路径如 `/root`、树节点只显示 basename、打开状态用颜色标记、右侧居中折叠按钮、完整右键菜单动作、选中项删除确认和可调整文件列表列宽。
 - 文件管理器在线文本编辑：双击或右键打开普通浮动窗口，支持多个文件窗口同时编辑、拖动、最小化、最大化、`Ctrl+S` 保存，关闭脏内容时提示保存、保存并关闭、不保存并关闭或取消。
 - 文件和终端右键菜单渲染在视口层，避免 UI 缩放造成坐标偏移；文件右键菜单点击其他位置会关闭。
 - 文件选择器或拖放上传，显示总进度、单文件进度、上传速度，并在完成后自动关闭紧凑进度面板。
@@ -48,4 +48,4 @@ zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/Web
 
 ## 必要工作流
 
-以后修改本项目之前，先读本文件和涉及模块下的 `MODULE_STATUS.md`。每次代码修改后递增版本号，运行 `powershell -ExecutionPolicy Bypass -File .\build-windows.ps1`，确保生成 `release\zshell.<版本号>.exe`，再复制一份到 `D:\` 根目录，并对最终 exe 做基本冒烟验证。不要自动删除 `release` 中的旧 exe。验证通过后提交并推送到 GitHub。
+以后修改本项目之前，先读本文件和涉及模块下的 `MODULE_STATUS.md`。每次代码修改后递增版本号，运行 `powershell -ExecutionPolicy Bypass -File .\build-windows.ps1`，确保生成 `release\zshell.<版本号>.exe`，再复制一份到 `D:\` 根目录，并对最终 exe 做基本冒烟验证。不要自动删除 `release` 中的旧 exe。验证通过后提交并推送到 GitHub，并通过推送 `v<版本号>` tag 触发 GitHub Release 发布。

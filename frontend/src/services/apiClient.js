@@ -227,6 +227,13 @@ export function transferRemoteItems(payload) {
   });
 }
 
+export function deleteRemoteItems(connectionId, items) {
+  return requestJson('/api/sftp/delete', {
+    method: 'POST',
+    body: JSON.stringify({ connectionId, items }),
+  });
+}
+
 function parseJson(value) {
   try {
     return JSON.parse(value || '{}');

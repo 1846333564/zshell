@@ -12,7 +12,7 @@
 
 路由注册在标准 `http.ServeMux` 上。连接配置路由位于 `/api/config/connections`，支持 `GET`、`POST`、`PUT` 和 `DELETE`；UI 偏好路由位于 `/api/config/preferences`，支持 `GET` 和 `PUT`，当前保存 `uiScale` 和 `terminalFontSize`。保存配置由 `configstore` 持久化，活动连接查询使用 `store.MemoryStore`。密码连接编辑时，如果密码为空，会保留旧密码。
 
-SFTP 上传支持多文件和多目录；远程文本编辑使用 `/api/sftp/file/read` 和 `/api/sftp/file/write`；监控快照由 `POST /api/monitor/snapshot` 返回。应用信息由 `GET /api/app/info` 返回，更新检查和应用分别使用 `POST /api/update/check` 与 `POST /api/update/apply`。
+SFTP 上传支持多文件和多目录；远程文本编辑使用 `/api/sftp/file/read` 和 `/api/sftp/file/write`；远程文件删除使用 `/api/sftp/delete` 强制递归删除选中项；监控快照由 `POST /api/monitor/snapshot` 返回。应用信息由 `GET /api/app/info` 返回，更新检查和应用分别使用 `POST /api/update/check` 与 `POST /api/update/apply`。
 
 ## 已知工作
 

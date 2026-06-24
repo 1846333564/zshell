@@ -228,6 +228,7 @@
           <button :disabled="loading" @click="downloadContextEntry">下载</button>
         </template>
         <button :disabled="!hasSelection || loading" @click="downloadSelectionFromMenu">下载选中</button>
+        <button class="danger" :disabled="!hasSelection || loading" @click="deleteSelectionFromMenu">删除</button>
 
         <div class="context-menu-separator"></div>
         <button :disabled="!connectionId || uploading" @click="chooseFilesFromMenu">上传文件到此处...</button>
@@ -250,6 +251,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   archiveRemoteItemsUrl,
   backendDownloadUrl,
+  deleteRemoteItems,
   downloadRemoteFile,
   downloadRemoteItems,
   listRemoteFiles,
@@ -1104,7 +1106,7 @@ function openBlankContextMenu(event) {
 }
 
 function openContextMenu(event, target = {}) {
-  const position = viewportContextMenuPosition(event, { width: 220, height: 430 });
+  const position = viewportContextMenuPosition(event, { width: 220, height: 470 });
   contextMenu.visible = true;
   contextMenu.entry = target.entry || null;
   contextMenu.targetPath = target.targetPath || currentPath.value || HOME_PATH;
@@ -1150,6 +1152,51 @@ function copySelectionFromMenu() {
 function cutSelectionFromMenu() {
   hideContextMenu();
   cutSelection();
+}
+
+async function deleteSelectionFromMenu() {
+  hideContextMenu();
+  await deleteSelection();
+}
+
+async function deleteSelection() {
+  if (!hasSelection.value || !props.connectionId) {
+    return;
+  }
+
+  const selected = selectedEntries.value;
+  if (!window.confirm(deleteConfirmMessage(selected))) {
+    return;
+  }
+
+  loading.value = true;
+  errorMessage.value = '';
+
+  try {
+    await deleteRemoteItems(
+      props.connectionId,
+      selected.map((entry) => ({
+        path: entry.path,
+        isDir: entry.isDir,
+      })),
+    );
+    clearSelection();
+    clearClipboardIfDeleted(selected);
+    await refresh(currentPath.value || HOME_PATH);
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '删除失败';
+  } finally {
+    loading.value = false;
+  }
+}
+
+function deleteConfirmMessage(selected) {
+  const preview = selected
+    .slice(0, 6)
+    .map((entry) => `- ${entry.path}`)
+    .join('\n');
+  const more = selected.length > 6 ? `\n... 还有 ${selected.length - 6} 项` : '';
+  return `确认强制删除选中的 ${selected.length} 项？\n\n${preview}${more}\n\n此操作不可撤销。`;
 }
 
 function writeClipboard(action) {
@@ -1452,6 +1499,21 @@ function normalizeClipboardAction(action) {
   return CLIPBOARD_ACTIONS.has(action) ? action : 'copy';
 }
 
+function clearClipboardIfDeleted(deletedItems) {
+  const pendingClipboard = normalizeClipboardPayload(clipboard.value);
+  if (!pendingClipboard) {
+    return;
+  }
+  const removed = deletedItems.some((deletedItem) =>
+    pendingClipboard.items.some((item) => item.path === deletedItem.path || (deletedItem.isDir && isSameOrChildPath(item.path, deletedItem.path))),
+  );
+  if (!removed) {
+    return;
+  }
+  localStorage.removeItem(CLIPBOARD_KEY);
+  clipboard.value = null;
+}
+
 function onStorage(event) {
   if (event.key === CLIPBOARD_KEY) {
     clipboard.value = readClipboard();
@@ -1576,6 +1638,21 @@ function pathDepth(itemPath) {
     return itemPath.slice(2).split('/').filter(Boolean).length;
   }
   return itemPath.split('/').filter(Boolean).length;
+}
+
+function isSameOrChildPath(candidate, parent) {
+  const cleanCandidate = normalizePath(candidate);
+  const cleanParent = normalizePath(parent);
+  if (!cleanCandidate || !cleanParent) {
+    return false;
+  }
+  if (cleanCandidate === cleanParent) {
+    return true;
+  }
+  if (cleanParent === ROOT_PATH) {
+    return cleanCandidate.startsWith(ROOT_PATH);
+  }
+  return cleanCandidate.startsWith(`${cleanParent}/`);
 }
 
 function isPathVisible(itemPath) {

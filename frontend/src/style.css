@@ -1687,6 +1687,10 @@ body,
   background: rgba(40, 197, 255, 0.16);
 }
 
+.context-menu button.danger {
+  color: var(--danger);
+}
+
 .context-menu button:disabled {
   opacity: 0.45;
   cursor: not-allowed;

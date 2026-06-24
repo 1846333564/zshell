@@ -111,3 +111,27 @@ func TestIsSameOrChildPath(t *testing.T) {
 		})
 	}
 }
+
+func TestIsProtectedDeletePath(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{name: "empty", input: "", want: true},
+		{name: "spaces", input: "   ", want: true},
+		{name: "dot", input: ".", want: true},
+		{name: "root", input: "/", want: true},
+		{name: "normal file", input: "/home/demo.txt", want: false},
+		{name: "normal directory", input: "/home/demo", want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isProtectedDeletePath(tc.input)
+			if got != tc.want {
+				t.Fatalf("isProtectedDeletePath(%q)=%t, want %t", tc.input, got, tc.want)
+			}
+		})
+	}
+}
