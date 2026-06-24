@@ -66,6 +66,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/config/preferences", s.handleUIPreferences)
 	mux.HandleFunc("/api/update/check", s.handleUpdateCheck)
 	mux.HandleFunc("/api/update/apply", s.handleUpdateApply)
+	mux.HandleFunc("/api/update/apply/stream", s.handleUpdateApplyStream)
 	mux.HandleFunc("/api/ssh/test", s.handleSSHTest)
 	mux.HandleFunc("/api/ssh/exec", s.handleSSHExec)
 	mux.HandleFunc("/api/sftp/list", s.handleSFTPList)
@@ -185,6 +186,49 @@ func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"update": result})
+}
+
+func (s *Server) handleUpdateApplyStream(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "streaming is not supported")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/x-ndjson; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+
+	encoder := json.NewEncoder(w)
+	writeEvent := func(payload map[string]any) {
+		_ = encoder.Encode(payload)
+		flusher.Flush()
+	}
+
+	result, err := s.update.ApplyWithProgress(r.Context(), func(event updatesvc.ProgressEvent) {
+		writeEvent(map[string]any{
+			"type":     "progress",
+			"progress": event,
+		})
+	})
+	if err != nil {
+		writeEvent(map[string]any{
+			"type":  "error",
+			"error": err.Error(),
+		})
+		return
+	}
+
+	writeEvent(map[string]any{
+		"type":   "result",
+		"update": result,
+	})
 }
 
 func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {

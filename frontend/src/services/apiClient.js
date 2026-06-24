@@ -81,11 +81,79 @@ export function checkForUpdate() {
   });
 }
 
-export function applyUpdate() {
+export async function applyUpdate(onProgress) {
+  if (typeof onProgress === 'function') {
+    return applyUpdateWithProgress(onProgress);
+  }
+
   return requestJson('/api/update/apply', {
     method: 'POST',
     body: JSON.stringify({}),
   });
+}
+
+async function applyUpdateWithProgress(onProgress) {
+  const response = await fetch(apiUrl('/api/update/apply/stream'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({}),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || `update failed: ${response.status}`);
+  }
+  if (!response.body) {
+    return response.json();
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let result = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const event = parseJson(line.trim());
+      if (!event.type) {
+        continue;
+      }
+      if (event.type === 'progress') {
+        onProgress(event.progress || {});
+        continue;
+      }
+      if (event.type === 'error') {
+        throw new Error(event.error || '更新失败');
+      }
+      if (event.type === 'result') {
+        result = event.update || {};
+      }
+    }
+
+    if (done) {
+      break;
+    }
+  }
+
+  if (buffer.trim()) {
+    const event = parseJson(buffer.trim());
+    if (event.type === 'progress') {
+      onProgress(event.progress || {});
+    } else if (event.type === 'error') {
+      throw new Error(event.error || '更新失败');
+    } else if (event.type === 'result') {
+      result = event.update || {};
+    }
+  }
+
+  return { update: result || {} };
 }
 
 export function testConnection(connectionId) {

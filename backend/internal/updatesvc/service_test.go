@@ -58,6 +58,29 @@ func TestManualReleaseURL(t *testing.T) {
 	}
 }
 
+func TestDownloadPercent(t *testing.T) {
+	tests := []struct {
+		name   string
+		loaded int64
+		total  int64
+		want   int
+	}{
+		{name: "start with total", loaded: 0, total: 100, want: 32},
+		{name: "half downloaded", loaded: 50, total: 100, want: 57},
+		{name: "complete", loaded: 100, total: 100, want: 82},
+		{name: "unknown total without bytes", loaded: 0, total: 0, want: 32},
+		{name: "unknown total with bytes", loaded: 2048, total: 0, want: 42},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := downloadPercent(tt.loaded, tt.total); got != tt.want {
+				t.Fatalf("downloadPercent(%d, %d) = %d, want %d", tt.loaded, tt.total, got, tt.want)
+			}
+		})
+	}
+}
+
 type assertErr string
 
 func (e assertErr) Error() string {

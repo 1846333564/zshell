@@ -2,9 +2,13 @@ package sshsvc
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -17,8 +21,53 @@ type ExecResult struct {
 	ExitCode int    `json:"exitCode"`
 }
 
+var sharedClients sync.Map
+
+type sharedClient struct {
+	client *ssh.Client
+}
+
 func NewClient(conn model.Connection, timeout time.Duration) (*ssh.Client, error) {
 	return dial(conn, timeout)
+}
+
+func SharedClient(conn model.Connection, timeout time.Duration) (*ssh.Client, error) {
+	key := sharedClientKey(conn)
+	if cached, ok := sharedClients.Load(key); ok {
+		client := cached.(*sharedClient).client
+		if sshClientAlive(client) {
+			return client, nil
+		}
+		_ = client.Close()
+		sharedClients.Delete(key)
+	}
+
+	client, err := dial(conn, timeout)
+	if err != nil {
+		return nil, err
+	}
+
+	cached := &sharedClient{client: client}
+	actual, loaded := sharedClients.LoadOrStore(key, cached)
+	if loaded {
+		_ = client.Close()
+		existing := actual.(*sharedClient).client
+		if sshClientAlive(existing) {
+			return existing, nil
+		}
+		_ = existing.Close()
+		sharedClients.Delete(key)
+		return SharedClient(conn, timeout)
+	}
+
+	return client, nil
+}
+
+func DropSharedClient(conn model.Connection) {
+	key := sharedClientKey(conn)
+	if cached, ok := sharedClients.LoadAndDelete(key); ok {
+		_ = cached.(*sharedClient).client.Close()
+	}
 }
 
 func TestConnection(conn model.Connection, timeout time.Duration) error {
@@ -68,6 +117,24 @@ func ExecCommand(conn model.Connection, command string, timeout time.Duration) (
 		Stderr:   string(bytes.ToValidUTF8(stderrBuf.Bytes(), []byte("?"))),
 		ExitCode: exitCode,
 	}, nil
+}
+
+func sshClientAlive(client *ssh.Client) bool {
+	_, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
+	return err == nil
+}
+
+func sharedClientKey(conn model.Connection) string {
+	passwordHash := sha256.Sum256([]byte(conn.Password))
+	parts := []string{
+		strings.TrimSpace(conn.ID),
+		strings.TrimSpace(conn.Host),
+		fmt.Sprintf("%d", conn.Port),
+		strings.TrimSpace(conn.Username),
+		strings.TrimSpace(conn.AuthMethod),
+		hex.EncodeToString(passwordHash[:]),
+	}
+	return strings.Join(parts, "\x00")
 }
 
 func dial(conn model.Connection, timeout time.Duration) (*ssh.Client, error) {

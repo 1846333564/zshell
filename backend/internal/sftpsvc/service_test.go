@@ -135,3 +135,52 @@ func TestIsProtectedDeletePath(t *testing.T) {
 		})
 	}
 }
+
+func TestDeleteShellPathArg(t *testing.T) {
+	cases := []struct {
+		name       string
+		input      string
+		wantRemote string
+		wantArg    string
+		wantErr    bool
+	}{
+		{name: "absolute path", input: "/home/demo file.txt", wantRemote: "/home/demo file.txt", wantArg: "'/home/demo file.txt'"},
+		{name: "home child path", input: "~/demo file.txt", wantRemote: "~/demo file.txt", wantArg: "${HOME}'/demo file.txt'"},
+		{name: "quote escaping", input: "/home/a'b.txt", wantRemote: "/home/a'b.txt", wantArg: "'/home/a'\"'\"'b.txt'"},
+		{name: "root rejected", input: "/", wantErr: true},
+		{name: "home rejected", input: "~", wantErr: true},
+		{name: "relative rejected", input: "demo.txt", wantErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotRemote, gotArg, err := deleteShellPathArg(tc.input)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if gotRemote != tc.wantRemote || gotArg != tc.wantArg {
+				t.Fatalf("deleteShellPathArg(%q)=(%q,%q), want (%q,%q)", tc.input, gotRemote, gotArg, tc.wantRemote, tc.wantArg)
+			}
+		})
+	}
+}
+
+func TestSameConnectionTransferCommand(t *testing.T) {
+	copyCommand := sameConnectionTransferCommand("copy", "/home/source file.txt", "/home/target file.txt")
+	wantCopy := "cp -a --reflink=auto -- '/home/source file.txt' '/home/target file.txt' 2>/dev/null || cp -a -- '/home/source file.txt' '/home/target file.txt'"
+	if copyCommand != wantCopy {
+		t.Fatalf("copy command=%q, want %q", copyCommand, wantCopy)
+	}
+
+	moveCommand := sameConnectionTransferCommand("move", "/home/source file.txt", "/home/target file.txt")
+	wantMove := "mv -f -- '/home/source file.txt' '/home/target file.txt'"
+	if moveCommand != wantMove {
+		t.Fatalf("move command=%q, want %q", moveCommand, wantMove)
+	}
+}

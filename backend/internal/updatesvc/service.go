@@ -25,6 +25,25 @@ type Service struct {
 
 const updateDownloadAttempts = 3
 
+type ProgressReporter func(ProgressEvent)
+
+type ProgressEvent struct {
+	Stage          string `json:"stage"`
+	Percent        int    `json:"percent"`
+	Message        string `json:"message"`
+	Detail         string `json:"detail,omitempty"`
+	CurrentVersion string `json:"currentVersion,omitempty"`
+	LatestVersion  string `json:"latestVersion,omitempty"`
+	ReleaseName    string `json:"releaseName,omitempty"`
+	ReleaseURL     string `json:"releaseUrl,omitempty"`
+	AssetName      string `json:"assetName,omitempty"`
+	AssetURL       string `json:"assetUrl,omitempty"`
+	LoadedBytes    int64  `json:"loadedBytes,omitempty"`
+	TotalBytes     int64  `json:"totalBytes,omitempty"`
+	Attempt        int    `json:"attempt,omitempty"`
+	MaxAttempts    int    `json:"maxAttempts,omitempty"`
+}
+
 type CheckResult struct {
 	CurrentVersion string `json:"currentVersion"`
 	LatestVersion  string `json:"latestVersion"`
@@ -58,6 +77,7 @@ type githubAsset struct {
 	Name               string `json:"name"`
 	BrowserDownloadURL string `json:"browser_download_url"`
 	Digest             string `json:"digest"`
+	Size               int64  `json:"size"`
 }
 
 func NewService() *Service {
@@ -67,7 +87,7 @@ func NewService() *Service {
 }
 
 func (s *Service) Check(ctx context.Context) (CheckResult, error) {
-	release, err := s.latestRelease(ctx)
+	release, err := s.latestRelease(ctx, nil)
 	if err != nil {
 		return CheckResult{}, explainCheckError(err)
 	}
@@ -100,13 +120,41 @@ func (s *Service) Check(ctx context.Context) (CheckResult, error) {
 }
 
 func (s *Service) Apply(ctx context.Context) (ApplyResult, error) {
-	release, err := s.latestRelease(ctx)
+	return s.ApplyWithProgress(ctx, nil)
+}
+
+func (s *Service) ApplyWithProgress(ctx context.Context, report ProgressReporter) (ApplyResult, error) {
+	reportProgress(report, ProgressEvent{
+		Stage:          "checking",
+		Percent:        4,
+		Message:        "正在连接 GitHub Release",
+		CurrentVersion: appinfo.Version,
+	})
+
+	release, err := s.latestRelease(ctx, report)
 	if err != nil {
 		return ApplyResult{}, explainCheckError(err)
 	}
 
 	latestVersion := normalizeVersion(release.TagName)
+	reportProgress(report, ProgressEvent{
+		Stage:          "version",
+		Percent:        18,
+		Message:        "已获取最新版本信息",
+		CurrentVersion: appinfo.Version,
+		LatestVersion:  latestVersion,
+		ReleaseName:    release.Name,
+		ReleaseURL:     release.HTMLURL,
+	})
 	if compareVersions(latestVersion, appinfo.Version) <= 0 {
+		reportProgress(report, ProgressEvent{
+			Stage:          "done",
+			Percent:        100,
+			Message:        "当前已经是最新版本",
+			CurrentVersion: appinfo.Version,
+			LatestVersion:  latestVersion,
+			ReleaseURL:     release.HTMLURL,
+		})
 		return ApplyResult{
 			OK:             true,
 			CurrentVersion: appinfo.Version,
@@ -119,15 +167,35 @@ func (s *Service) Apply(ctx context.Context) (ApplyResult, error) {
 	if asset.Name == "" || asset.BrowserDownloadURL == "" {
 		return ApplyResult{}, fmt.Errorf("latest release does not contain %s", appinfo.ReleaseAssetName(latestVersion))
 	}
+	reportProgress(report, ProgressEvent{
+		Stage:          "asset",
+		Percent:        24,
+		Message:        "已定位更新安装包",
+		CurrentVersion: appinfo.Version,
+		LatestVersion:  latestVersion,
+		ReleaseName:    release.Name,
+		ReleaseURL:     release.HTMLURL,
+		AssetName:      asset.Name,
+		AssetURL:       asset.BrowserDownloadURL,
+		TotalBytes:     asset.Size,
+	})
 
-	downloadPath, digest, err := s.downloadExecutable(ctx, asset)
+	downloadPath, digest, err := s.downloadExecutable(ctx, asset, report)
 	if err != nil {
 		return ApplyResult{}, err
 	}
 
 	expectedDigest := assetDigest(asset)
 	if expectedDigest == "" {
-		expectedDigest, err = s.findSHA256Digest(ctx, release.Assets, asset.Name)
+		reportProgress(report, ProgressEvent{
+			Stage:         "checksum",
+			Percent:       84,
+			Message:       "正在获取 SHA256 校验文件",
+			AssetName:     asset.Name,
+			AssetURL:      asset.BrowserDownloadURL,
+			LatestVersion: latestVersion,
+		})
+		expectedDigest, err = s.findSHA256Digest(ctx, release.Assets, asset.Name, report)
 		if err != nil {
 			_ = os.Remove(downloadPath)
 			return ApplyResult{}, err
@@ -137,14 +205,36 @@ func (s *Service) Apply(ctx context.Context) (ApplyResult, error) {
 		_ = os.Remove(downloadPath)
 		return ApplyResult{}, fmt.Errorf("downloaded update checksum mismatch")
 	}
+	reportProgress(report, ProgressEvent{
+		Stage:         "checksum",
+		Percent:       90,
+		Message:       "安装包校验完成",
+		Detail:        digest,
+		AssetName:     asset.Name,
+		LatestVersion: latestVersion,
+	})
 
+	reportProgress(report, ProgressEvent{
+		Stage:         "scheduling",
+		Percent:       94,
+		Message:       "正在写入替换脚本",
+		LatestVersion: latestVersion,
+	})
 	if err := scheduleReplacement(downloadPath); err != nil {
 		_ = os.Remove(downloadPath)
 		return ApplyResult{}, err
 	}
 
+	reportProgress(report, ProgressEvent{
+		Stage:          "restarting",
+		Percent:        100,
+		Message:        "更新已下载，应用即将重启",
+		CurrentVersion: appinfo.Version,
+		LatestVersion:  latestVersion,
+		AssetName:      asset.Name,
+	})
 	go func() {
-		time.Sleep(600 * time.Millisecond)
+		time.Sleep(1800 * time.Millisecond)
 		os.Exit(0)
 	}()
 
@@ -156,8 +246,15 @@ func (s *Service) Apply(ctx context.Context) (ApplyResult, error) {
 	}, nil
 }
 
-func (s *Service) latestRelease(ctx context.Context) (githubRelease, error) {
+func (s *Service) latestRelease(ctx context.Context, report ProgressReporter) (githubRelease, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", appinfo.GitHubOwner, appinfo.GitHubRepo)
+	reportProgress(report, ProgressEvent{
+		Stage:          "checking",
+		Percent:        8,
+		Message:        "正在请求 GitHub Release API",
+		Detail:         url,
+		CurrentVersion: appinfo.Version,
+	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return githubRelease{}, err
@@ -172,11 +269,23 @@ func (s *Service) latestRelease(ctx context.Context) (githubRelease, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return s.latestReleaseByRedirect(ctx)
+		reportProgress(report, ProgressEvent{
+			Stage:   "checking",
+			Percent: 12,
+			Message: "API 未找到 latest，改用 Release 页面解析",
+			Detail:  resp.Status,
+		})
+		return s.latestReleaseByRedirect(ctx, report)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
-			release, fallbackErr := s.latestReleaseByRedirect(ctx)
+			reportProgress(report, ProgressEvent{
+				Stage:   "checking",
+				Percent: 12,
+				Message: "GitHub API 受限，改用 Release 页面解析",
+				Detail:  resp.Status,
+			})
+			release, fallbackErr := s.latestReleaseByRedirect(ctx, report)
 			if fallbackErr == nil {
 				return release, nil
 			}
@@ -191,11 +300,25 @@ func (s *Service) latestRelease(ctx context.Context) (githubRelease, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
 		return githubRelease{}, fmt.Errorf("decode github release: %w", err)
 	}
+	reportProgress(report, ProgressEvent{
+		Stage:         "checking",
+		Percent:       16,
+		Message:       "GitHub Release 信息读取完成",
+		LatestVersion: normalizeVersion(release.TagName),
+		ReleaseName:   release.Name,
+		ReleaseURL:    release.HTMLURL,
+	})
 	return release, nil
 }
 
-func (s *Service) latestReleaseByRedirect(ctx context.Context) (githubRelease, error) {
+func (s *Service) latestReleaseByRedirect(ctx context.Context, report ProgressReporter) (githubRelease, error) {
 	url := fmt.Sprintf("https://github.com/%s/%s/releases/latest", appinfo.GitHubOwner, appinfo.GitHubRepo)
+	reportProgress(report, ProgressEvent{
+		Stage:   "checking",
+		Percent: 14,
+		Message: "正在打开 GitHub Release latest 页面",
+		Detail:  url,
+	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return githubRelease{}, err
@@ -223,7 +346,7 @@ func (s *Service) latestReleaseByRedirect(ctx context.Context) (githubRelease, e
 
 	assetName := appinfo.ReleaseAssetName(version)
 	downloadBase := fmt.Sprintf("https://github.com/%s/%s/releases/download/%s", appinfo.GitHubOwner, appinfo.GitHubRepo, tag)
-	return githubRelease{
+	release := githubRelease{
 		TagName: tag,
 		Name:    appinfo.ProductName + " " + version,
 		HTMLURL: resp.Request.URL.String(),
@@ -237,13 +360,33 @@ func (s *Service) latestReleaseByRedirect(ctx context.Context) (githubRelease, e
 				BrowserDownloadURL: downloadBase + "/" + assetName + ".sha256",
 			},
 		},
-	}, nil
+	}
+	reportProgress(report, ProgressEvent{
+		Stage:         "checking",
+		Percent:       16,
+		Message:       "Release 页面解析完成",
+		LatestVersion: version,
+		ReleaseName:   release.Name,
+		ReleaseURL:    release.HTMLURL,
+	})
+	return release, nil
 }
 
-func (s *Service) downloadExecutable(ctx context.Context, asset githubAsset) (string, string, error) {
+func (s *Service) downloadExecutable(ctx context.Context, asset githubAsset, report ProgressReporter) (string, string, error) {
 	var lastErr error
 	for attempt := 1; attempt <= updateDownloadAttempts; attempt++ {
-		target, digest, err := s.downloadExecutableOnce(ctx, asset)
+		reportProgress(report, ProgressEvent{
+			Stage:       "downloading",
+			Percent:     30,
+			Message:     "开始下载更新安装包",
+			Detail:      asset.BrowserDownloadURL,
+			AssetName:   asset.Name,
+			AssetURL:    asset.BrowserDownloadURL,
+			TotalBytes:  asset.Size,
+			Attempt:     attempt,
+			MaxAttempts: updateDownloadAttempts,
+		})
+		target, digest, err := s.downloadExecutableOnce(ctx, asset, attempt, report)
 		if err == nil {
 			return target, digest, nil
 		}
@@ -251,12 +394,22 @@ func (s *Service) downloadExecutable(ctx context.Context, asset githubAsset) (st
 		if ctx.Err() != nil {
 			break
 		}
+		reportProgress(report, ProgressEvent{
+			Stage:       "retrying",
+			Percent:     30,
+			Message:     "下载失败，准备重试",
+			Detail:      err.Error(),
+			AssetName:   asset.Name,
+			AssetURL:    asset.BrowserDownloadURL,
+			Attempt:     attempt,
+			MaxAttempts: updateDownloadAttempts,
+		})
 		waitBeforeRetry(ctx, attempt)
 	}
 	return "", "", explainDownloadError("下载更新失败", asset.BrowserDownloadURL, lastErr)
 }
 
-func (s *Service) downloadExecutableOnce(ctx context.Context, asset githubAsset) (string, string, error) {
+func (s *Service) downloadExecutableOnce(ctx context.Context, asset githubAsset, attempt int, report ProgressReporter) (string, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, asset.BrowserDownloadURL, nil)
 	if err != nil {
 		return "", "", err
@@ -273,6 +426,22 @@ func (s *Service) downloadExecutableOnce(ctx context.Context, asset githubAsset)
 		return "", "", fmt.Errorf("download update failed: %s", resp.Status)
 	}
 
+	totalBytes := resp.ContentLength
+	if totalBytes <= 0 {
+		totalBytes = asset.Size
+	}
+	reportProgress(report, ProgressEvent{
+		Stage:       "downloading",
+		Percent:     32,
+		Message:     "下载连接已建立",
+		Detail:      resp.Status,
+		AssetName:   asset.Name,
+		AssetURL:    asset.BrowserDownloadURL,
+		TotalBytes:  totalBytes,
+		Attempt:     attempt,
+		MaxAttempts: updateDownloadAttempts,
+	})
+
 	dir := filepath.Join(os.TempDir(), "zshell-update")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", "", err
@@ -285,10 +454,34 @@ func (s *Service) downloadExecutableOnce(ctx context.Context, asset githubAsset)
 	defer file.Close()
 
 	hash := sha256.New()
-	if _, err := io.Copy(io.MultiWriter(file, hash), resp.Body); err != nil {
+	progress := newDownloadProgressReader(resp.Body, totalBytes, func(loaded int64, total int64) {
+		reportProgress(report, ProgressEvent{
+			Stage:       "downloading",
+			Percent:     downloadPercent(loaded, total),
+			Message:     "正在下载更新安装包",
+			AssetName:   asset.Name,
+			AssetURL:    asset.BrowserDownloadURL,
+			LoadedBytes: loaded,
+			TotalBytes:  total,
+			Attempt:     attempt,
+			MaxAttempts: updateDownloadAttempts,
+		})
+	})
+	if _, err := io.CopyBuffer(io.MultiWriter(file, hash), progress, make([]byte, 256*1024)); err != nil {
 		_ = os.Remove(target)
 		return "", "", fmt.Errorf("write update temp file: %w", err)
 	}
+	reportProgress(report, ProgressEvent{
+		Stage:       "downloading",
+		Percent:     82,
+		Message:     "更新安装包下载完成",
+		AssetName:   asset.Name,
+		AssetURL:    asset.BrowserDownloadURL,
+		LoadedBytes: progress.loaded,
+		TotalBytes:  totalBytes,
+		Attempt:     attempt,
+		MaxAttempts: updateDownloadAttempts,
+	})
 
 	return target, hex.EncodeToString(hash.Sum(nil)), nil
 }
@@ -405,12 +598,12 @@ func hasSHA256Asset(assets []githubAsset, exeName string) bool {
 	return false
 }
 
-func (s *Service) findSHA256Digest(ctx context.Context, assets []githubAsset, exeName string) (string, error) {
+func (s *Service) findSHA256Digest(ctx context.Context, assets []githubAsset, exeName string, report ProgressReporter) (string, error) {
 	candidates := []string{exeName + ".sha256", "sha256.txt"}
 	for _, candidate := range candidates {
 		for _, asset := range assets {
 			if strings.EqualFold(asset.Name, candidate) && asset.BrowserDownloadURL != "" {
-				digest, err := s.downloadSHA256(ctx, asset.BrowserDownloadURL, exeName)
+				digest, err := s.downloadSHA256(ctx, asset.BrowserDownloadURL, exeName, report)
 				if err != nil {
 					return "", err
 				}
@@ -421,17 +614,47 @@ func (s *Service) findSHA256Digest(ctx context.Context, assets []githubAsset, ex
 	return "", nil
 }
 
-func (s *Service) downloadSHA256(ctx context.Context, url string, exeName string) (string, error) {
+func (s *Service) downloadSHA256(ctx context.Context, url string, exeName string, report ProgressReporter) (string, error) {
 	var lastErr error
 	for attempt := 1; attempt <= updateDownloadAttempts; attempt++ {
+		reportProgress(report, ProgressEvent{
+			Stage:       "checksum",
+			Percent:     85,
+			Message:     "正在下载校验文件",
+			Detail:      url,
+			AssetName:   exeName,
+			AssetURL:    url,
+			Attempt:     attempt,
+			MaxAttempts: updateDownloadAttempts,
+		})
 		digest, err := s.downloadSHA256Once(ctx, url, exeName)
 		if err == nil {
+			reportProgress(report, ProgressEvent{
+				Stage:       "checksum",
+				Percent:     88,
+				Message:     "校验文件读取完成",
+				Detail:      digest,
+				AssetName:   exeName,
+				AssetURL:    url,
+				Attempt:     attempt,
+				MaxAttempts: updateDownloadAttempts,
+			})
 			return digest, nil
 		}
 		lastErr = err
 		if ctx.Err() != nil {
 			break
 		}
+		reportProgress(report, ProgressEvent{
+			Stage:       "retrying",
+			Percent:     85,
+			Message:     "校验文件下载失败，准备重试",
+			Detail:      err.Error(),
+			AssetName:   exeName,
+			AssetURL:    url,
+			Attempt:     attempt,
+			MaxAttempts: updateDownloadAttempts,
+		})
 		waitBeforeRetry(ctx, attempt)
 	}
 	return "", explainDownloadError("下载校验文件失败", url, lastErr)
@@ -476,6 +699,76 @@ func (s *Service) downloadSHA256Once(ctx context.Context, url string, exeName st
 
 func powerShellQuote(value string) string {
 	return strings.ReplaceAll(value, "'", "''")
+}
+
+type downloadProgressReader struct {
+	source     io.Reader
+	total      int64
+	loaded     int64
+	lastReport time.Time
+	report     func(loaded int64, total int64)
+}
+
+func newDownloadProgressReader(source io.Reader, total int64, report func(loaded int64, total int64)) *downloadProgressReader {
+	return &downloadProgressReader{
+		source: source,
+		total:  total,
+		report: report,
+	}
+}
+
+func (r *downloadProgressReader) Read(p []byte) (int, error) {
+	n, err := r.source.Read(p)
+	if n > 0 {
+		r.loaded += int64(n)
+		r.maybeReport(false)
+	}
+	if err == io.EOF {
+		r.maybeReport(true)
+	}
+	return n, err
+}
+
+func (r *downloadProgressReader) maybeReport(force bool) {
+	if r.report == nil {
+		return
+	}
+	now := time.Now()
+	if !force && !r.lastReport.IsZero() && now.Sub(r.lastReport) < 180*time.Millisecond {
+		return
+	}
+	r.lastReport = now
+	r.report(r.loaded, r.total)
+}
+
+func downloadPercent(loaded int64, total int64) int {
+	if total <= 0 {
+		if loaded > 0 {
+			return 42
+		}
+		return 32
+	}
+	percent := 32 + int((loaded*50)/total)
+	if percent < 32 {
+		return 32
+	}
+	if percent > 82 {
+		return 82
+	}
+	return percent
+}
+
+func reportProgress(report ProgressReporter, event ProgressEvent) {
+	if report == nil {
+		return
+	}
+	if event.Percent < 0 {
+		event.Percent = 0
+	}
+	if event.Percent > 100 {
+		event.Percent = 100
+	}
+	report(event)
 }
 
 func waitBeforeRetry(ctx context.Context, attempt int) {

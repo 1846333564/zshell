@@ -1348,6 +1348,81 @@ body,
   border-top: 1px solid rgba(146, 202, 255, 0.16);
 }
 
+.update-progress-panel {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid rgba(146, 202, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(10, 24, 37, 0.62);
+}
+
+.update-progress-head,
+.update-progress-detail,
+.update-progress-log-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.update-progress-head strong {
+  min-width: 0;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.update-progress-head span,
+.update-progress-detail,
+.update-progress-log-row span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.update-progress-track {
+  margin: 9px 0;
+}
+
+.update-progress-detail span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.update-progress-log {
+  max-height: 170px;
+  margin-top: 10px;
+  display: grid;
+  gap: 5px;
+  overflow: auto;
+}
+
+.update-progress-log-row {
+  min-height: 24px;
+  border: 1px solid rgba(146, 202, 255, 0.12);
+  border-radius: 6px;
+  padding: 4px 7px;
+  background: rgba(6, 16, 26, 0.58);
+}
+
+.update-progress-log-row span {
+  flex: 0 0 auto;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.update-progress-log-row strong {
+  min-width: 0;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .release-notes {
   margin: 12px 0 0;
   max-height: 240px;

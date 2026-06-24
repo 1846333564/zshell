@@ -2,7 +2,7 @@
 
 ## 项目概览
 
-zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/WebView2、Vue、xterm.js 和基于 SSH 的 SFTP。当前版本从 `VERSION` 文件读取，本次版本为 `0.1.3`，版本号从 `0.0.1` 起步。发布产物输出到项目根目录的 `release` 文件夹，命名格式为 `zshell.<版本号>.exe`；本地 `release` 历史包不会自动删除。
+zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/WebView2、Vue、xterm.js 和基于 SSH 的 SFTP。当前版本从 `VERSION` 文件读取，本次版本为 `0.1.5`，版本号从 `0.0.1` 起步。发布产物输出到项目根目录的 `release` 文件夹，命名格式为 `zshell.<版本号>.exe`；本地 `release` 历史包不会自动删除。
 
 ## 当前架构
 
@@ -14,16 +14,16 @@ zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/Web
 - `backend/internal/configstore` 使用 Windows DPAPI 在当前用户配置目录中加密保存连接配置。
 - `frontend/src/App.vue` 管理双栏桌面壳：左侧监控面板、右侧连接标签、终端和文件区域，并提供“关于 zShell”和“检查更新”弹窗。
 - `build-windows.ps1` 是 release 构建入口，会失败即停地执行 npm、Go 和 Wails 命令，读取 `VERSION`，并输出当前版本 exe 到 `release` 文件夹，不清理旧版本 exe。
-- `.github/workflows/release.yml` 用 GitHub Actions 在 tag 或手动触发时构建 Windows exe，并创建或更新 GitHub Release 资产；`.github/release-names.json` 可为指定版本配置 Release 标题，本次 `0.1.3` 标题为“增加远程文件强制删除”。
+- `.github/workflows/release.yml` 用 GitHub Actions 在 tag 或手动触发时构建 Windows exe，并创建或更新 GitHub Release 资产；`.github/release-names.json` 可为指定版本配置 Release 标题，本次 `0.1.5` 标题为“增加更新过程详细进度”。
 
 ## 已实现
 
 - 密码和当前 Windows 用户 `~/.ssh/id_rsa` SSH 认证。
 - WebSocket 交互式 PTY 终端。
-- SFTP 浏览、上传、下载、归档下载、远程文本读写、远程复制/移动和选中项强制删除；复制粘贴会避开源路径和已有同名目标，避免表现成剪切或覆盖。
+- SFTP 浏览、上传、下载、归档下载、远程文本读写、远程复制/移动和选中项强制删除；常用 SFTP 操作复用共享 SSH 客户端减少重复握手，同服务器复制/移动走远端 `cp`/`mv` 快路径，同服务器删除走远端 `rm -rf` 快路径，跨服务器传输保留 SFTP 流式复制；复制粘贴会避开源路径和已有同名目标，避免表现成剪切或覆盖。
 - Wails Windows 可执行文件打包。
 - 基于 `VERSION` 的版本号管理；默认后续版本只递增最后一位。
-- GitHub Release 更新检查和自更新链路，包含 API 限流 fallback、下载重试、校验和手动下载入口。
+- GitHub Release 更新检查和自更新链路，包含 API 限流 fallback、下载重试、校验、手动下载入口，以及应用更新时的流式阶段进度、下载字节进度和重试日志。
 - Linux 监控快照 API 和左侧监控 UI。
 - 10000 以上动态后端端口。
 - 后端管理的保存连接配置增删改查，配置使用 Windows DPAPI 加密落盘。

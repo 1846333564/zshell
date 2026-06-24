@@ -2,6 +2,7 @@ package sftpsvc
 
 import (
 	"archive/zip"
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/pkg/sftp"
+	"golang.org/x/crypto/ssh"
 	"zshell/backend/internal/model"
 	"zshell/backend/internal/sshsvc"
 )
@@ -85,14 +87,14 @@ type DeleteBatchResult struct {
 }
 
 func ListDirectory(conn model.Connection, remotePath string, timeout time.Duration) (string, []Entry, error) {
-	client, err := sshsvc.NewClient(conn, timeout)
+	client, err := sshsvc.SharedClient(conn, timeout)
 	if err != nil {
 		return "", nil, err
 	}
-	defer client.Close()
 
 	sftpClient, err := sftp.NewClient(client)
 	if err != nil {
+		sshsvc.DropSharedClient(conn)
 		return "", nil, fmt.Errorf("create sftp client: %w", err)
 	}
 	defer sftpClient.Close()
@@ -131,14 +133,14 @@ func ListDirectory(conn model.Connection, remotePath string, timeout time.Durati
 }
 
 func UploadFiles(conn model.Connection, remoteDir string, files []UploadItem, directories []string, timeout time.Duration) (UploadBatchResult, error) {
-	client, err := sshsvc.NewClient(conn, timeout)
+	client, err := sshsvc.SharedClient(conn, timeout)
 	if err != nil {
 		return UploadBatchResult{}, err
 	}
-	defer client.Close()
 
 	sftpClient, err := sftp.NewClient(client)
 	if err != nil {
+		sshsvc.DropSharedClient(conn)
 		return UploadBatchResult{}, fmt.Errorf("create sftp client: %w", err)
 	}
 	defer sftpClient.Close()
@@ -208,14 +210,14 @@ func UploadFiles(conn model.Connection, remoteDir string, files []UploadItem, di
 }
 
 func UploadFile(conn model.Connection, remoteDir string, fileName string, source io.Reader, timeout time.Duration) (string, int64, error) {
-	client, err := sshsvc.NewClient(conn, timeout)
+	client, err := sshsvc.SharedClient(conn, timeout)
 	if err != nil {
 		return "", 0, err
 	}
-	defer client.Close()
 
 	sftpClient, err := sftp.NewClient(client)
 	if err != nil {
+		sshsvc.DropSharedClient(conn)
 		return "", 0, fmt.Errorf("create sftp client: %w", err)
 	}
 	defer sftpClient.Close()
@@ -280,14 +282,14 @@ func DownloadFile(conn model.Connection, remotePath string, timeout time.Duratio
 }
 
 func ReadTextFile(conn model.Connection, remotePath string, timeout time.Duration) (TextFile, error) {
-	client, err := sshsvc.NewClient(conn, timeout)
+	client, err := sshsvc.SharedClient(conn, timeout)
 	if err != nil {
 		return TextFile{}, err
 	}
-	defer client.Close()
 
 	sftpClient, err := sftp.NewClient(client)
 	if err != nil {
+		sshsvc.DropSharedClient(conn)
 		return TextFile{}, fmt.Errorf("create sftp client: %w", err)
 	}
 	defer sftpClient.Close()
@@ -336,14 +338,14 @@ func WriteTextFile(conn model.Connection, remotePath string, content string, tim
 		return TextFile{}, fmt.Errorf("edited content is too large: %d bytes", len([]byte(content)))
 	}
 
-	client, err := sshsvc.NewClient(conn, timeout)
+	client, err := sshsvc.SharedClient(conn, timeout)
 	if err != nil {
 		return TextFile{}, err
 	}
-	defer client.Close()
 
 	sftpClient, err := sftp.NewClient(client)
 	if err != nil {
+		sshsvc.DropSharedClient(conn)
 		return TextFile{}, fmt.Errorf("create sftp client: %w", err)
 	}
 	defer sftpClient.Close()
@@ -431,26 +433,35 @@ func TransferItems(sourceConn model.Connection, targetConn model.Connection, tar
 		return TransferBatchResult{}, fmt.Errorf("no transfer items")
 	}
 
-	sourceSSH, err := sshsvc.NewClient(sourceConn, timeout)
+	sourceSSH, err := sshsvc.SharedClient(sourceConn, timeout)
 	if err != nil {
 		return TransferBatchResult{}, err
 	}
-	defer sourceSSH.Close()
-
-	targetSSH, err := sshsvc.NewClient(targetConn, timeout)
-	if err != nil {
-		return TransferBatchResult{}, err
-	}
-	defer targetSSH.Close()
 
 	sourceSFTP, err := sftp.NewClient(sourceSSH)
 	if err != nil {
+		sshsvc.DropSharedClient(sourceConn)
 		return TransferBatchResult{}, fmt.Errorf("create source sftp client: %w", err)
 	}
 	defer sourceSFTP.Close()
 
+	sameConnection := isSameConnection(sourceConn, targetConn)
+	if sameConnection {
+		resolvedTargetDir, err := resolveRemotePath(sourceSFTP, targetDir)
+		if err != nil {
+			return TransferBatchResult{}, fmt.Errorf("resolve target dir: %w", err)
+		}
+		return transferItemsOnSameConnection(sourceSSH, sourceSFTP, resolvedTargetDir, items, action)
+	}
+
+	targetSSH, err := sshsvc.SharedClient(targetConn, timeout)
+	if err != nil {
+		return TransferBatchResult{}, err
+	}
+
 	targetSFTP, err := sftp.NewClient(targetSSH)
 	if err != nil {
+		sshsvc.DropSharedClient(targetConn)
 		return TransferBatchResult{}, fmt.Errorf("create target sftp client: %w", err)
 	}
 	defer targetSFTP.Close()
@@ -459,7 +470,6 @@ func TransferItems(sourceConn model.Connection, targetConn model.Connection, tar
 	if err != nil {
 		return TransferBatchResult{}, fmt.Errorf("resolve target dir: %w", err)
 	}
-	sameConnection := isSameConnection(sourceConn, targetConn)
 
 	result := TransferBatchResult{
 		OK:          true,
@@ -525,63 +535,92 @@ func TransferItems(sourceConn model.Connection, targetConn model.Connection, tar
 	return result, nil
 }
 
+func transferItemsOnSameConnection(sshClient *ssh.Client, sftpClient *sftp.Client, resolvedTargetDir string, items []TransferItem, action string) (TransferBatchResult, error) {
+	result := TransferBatchResult{
+		OK:          true,
+		Action:      action,
+		Files:       make([]TransferResult, 0, len(items)),
+		Directories: make([]string, 0),
+	}
+
+	for _, item := range items {
+		sourcePath, err := resolveRemotePath(sftpClient, item.Path)
+		if err != nil {
+			return TransferBatchResult{}, fmt.Errorf("resolve source path %s: %w", item.Path, err)
+		}
+
+		stat, err := sftpClient.Stat(sourcePath)
+		if err != nil {
+			return TransferBatchResult{}, fmt.Errorf("stat source path %s: %w", sourcePath, err)
+		}
+
+		targetPath := path.Join(resolvedTargetDir, path.Base(sourcePath))
+		if stat.IsDir() && isSameOrChildPath(resolvedTargetDir, sourcePath) {
+			return TransferBatchResult{}, fmt.Errorf("cannot %s directory %s into itself or a child directory", action, sourcePath)
+		}
+		if action == "copy" {
+			targetPath, err = availableCopyTargetPath(sftpClient, sourcePath, targetPath, true)
+			if err != nil {
+				return TransferBatchResult{}, err
+			}
+		}
+		if action == "move" && targetPath == sourcePath {
+			appendTransferResult(&result, targetPath, stat)
+			continue
+		}
+
+		command := sameConnectionTransferCommand(action, sourcePath, targetPath)
+		if err := runRemoteShellCommand(sshClient, command); err != nil {
+			return TransferBatchResult{}, err
+		}
+
+		appendTransferResult(&result, targetPath, stat)
+	}
+
+	return result, nil
+}
+
+func appendTransferResult(result *TransferBatchResult, remotePath string, stat os.FileInfo) {
+	if stat.IsDir() {
+		result.Directories = append(result.Directories, remotePath)
+		return
+	}
+
+	result.Files = append(result.Files, TransferResult{RemotePath: remotePath, Size: stat.Size()})
+	result.TotalSize += stat.Size()
+}
+
 func DeleteItems(conn model.Connection, items []TransferItem, timeout time.Duration) (DeleteBatchResult, error) {
 	if len(items) == 0 {
 		return DeleteBatchResult{}, fmt.Errorf("no delete items")
 	}
 
-	sshClient, err := sshsvc.NewClient(conn, timeout)
-	if err != nil {
-		return DeleteBatchResult{}, err
-	}
-	defer sshClient.Close()
-
-	sftpClient, err := sftp.NewClient(sshClient)
-	if err != nil {
-		return DeleteBatchResult{}, fmt.Errorf("create sftp client: %w", err)
-	}
-	defer sftpClient.Close()
-
+	deleteArgs := make([]string, 0, len(items))
 	result := DeleteBatchResult{
 		OK:    true,
 		Items: make([]DeleteResult, 0, len(items)),
 	}
 
 	for _, item := range items {
-		requestedPath := normalizeRemotePath(item.Path)
-		if requestedPath == "~" || isProtectedDeletePath(requestedPath) {
-			return DeleteBatchResult{}, fmt.Errorf("refuse to delete protected path: %s", requestedPath)
-		}
-
-		remotePath, err := resolveRemotePath(sftpClient, item.Path)
+		remotePath, shellArg, err := deleteShellPathArg(item.Path)
 		if err != nil {
-			return DeleteBatchResult{}, fmt.Errorf("resolve delete path %s: %w", item.Path, err)
-		}
-		if isProtectedDeletePath(remotePath) {
-			return DeleteBatchResult{}, fmt.Errorf("refuse to delete protected path: %s", remotePath)
-		}
-
-		stat, err := sftpClient.Stat(remotePath)
-		if err != nil {
-			return DeleteBatchResult{}, fmt.Errorf("stat delete path %s: %w", remotePath, err)
-		}
-
-		deleteResult := DeleteResult{
-			RemotePath: remotePath,
-			IsDir:      stat.IsDir(),
-			Size:       stat.Size(),
-		}
-		if stat.IsDir() {
-			deleteResult.Size = 0
-		} else {
-			result.TotalSize += stat.Size()
-		}
-
-		if err := removeRemote(sftpClient, remotePath); err != nil {
 			return DeleteBatchResult{}, err
 		}
+		deleteArgs = append(deleteArgs, shellArg)
+		result.Items = append(result.Items, DeleteResult{
+			RemotePath: remotePath,
+			IsDir:      item.IsDir,
+			Size:       0,
+		})
+	}
 
-		result.Items = append(result.Items, deleteResult)
+	sshClient, err := sshsvc.SharedClient(conn, timeout)
+	if err != nil {
+		return DeleteBatchResult{}, err
+	}
+
+	if err := runRemoteShellCommand(sshClient, "rm -rf -- "+strings.Join(deleteArgs, " ")); err != nil {
+		return DeleteBatchResult{}, err
 	}
 
 	return result, nil
@@ -640,6 +679,69 @@ func copyPathCandidate(originalPath string, index int) string {
 		suffix = fmt.Sprintf(" copy %d", index)
 	}
 	return path.Join(dir, name+suffix+ext)
+}
+
+func sameConnectionTransferCommand(action string, sourcePath string, targetPath string) string {
+	sourceArg := shellQuote(sourcePath)
+	targetArg := shellQuote(targetPath)
+	if action == "copy" {
+		return fmt.Sprintf("cp -a --reflink=auto -- %s %s 2>/dev/null || cp -a -- %s %s", sourceArg, targetArg, sourceArg, targetArg)
+	}
+	return fmt.Sprintf("mv -f -- %s %s", sourceArg, targetArg)
+}
+
+func deleteShellPathArg(remotePath string) (string, string, error) {
+	requestedPath := normalizeRemotePath(remotePath)
+	cleaned := path.Clean(requestedPath)
+	if cleaned == "~" || isProtectedDeletePath(cleaned) {
+		return "", "", fmt.Errorf("refuse to delete protected path: %s", requestedPath)
+	}
+	if strings.HasPrefix(cleaned, "~/") {
+		suffix := strings.TrimPrefix(cleaned, "~")
+		if suffix == "" || suffix == "/" {
+			return "", "", fmt.Errorf("refuse to delete protected path: %s", requestedPath)
+		}
+		return cleaned, "${HOME}" + shellQuote(suffix), nil
+	}
+	if !strings.HasPrefix(cleaned, "/") {
+		return "", "", fmt.Errorf("delete path must be absolute or under home: %s", requestedPath)
+	}
+	return cleaned, shellQuote(cleaned), nil
+}
+
+func runRemoteShellCommand(client *ssh.Client, command string) error {
+	session, err := client.NewSession()
+	if err != nil {
+		return fmt.Errorf("create remote command session: %w", err)
+	}
+	defer session.Close()
+
+	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
+	session.Stdout = &stdoutBuf
+	session.Stderr = &stderrBuf
+	_ = session.Setenv("LANG", "C.UTF-8")
+	_ = session.Setenv("LC_ALL", "C.UTF-8")
+
+	if err := session.Run(command); err != nil {
+		output := strings.TrimSpace(string(bytes.ToValidUTF8(stderrBuf.Bytes(), []byte("?"))))
+		if output == "" {
+			output = strings.TrimSpace(string(bytes.ToValidUTF8(stdoutBuf.Bytes(), []byte("?"))))
+		}
+		if exitErr, ok := err.(*ssh.ExitError); ok {
+			if output == "" {
+				output = "no stderr"
+			}
+			return fmt.Errorf("remote command failed with exit %d: %s", exitErr.ExitStatus(), output)
+		}
+		return fmt.Errorf("run remote command: %w", err)
+	}
+
+	return nil
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
 func isSameOrChildPath(candidate string, parent string) bool {
