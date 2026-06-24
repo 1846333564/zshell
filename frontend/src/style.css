@@ -1079,12 +1079,9 @@ body,
 
 .remote-editor-window {
   position: fixed;
-  top: 86px;
-  left: 50%;
   z-index: 900;
   width: min(980px, calc(100vw - 64px));
   height: min(660px, calc(100vh - 126px));
-  transform: translateX(-50%);
   min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
@@ -1094,6 +1091,21 @@ body,
   border-radius: 8px;
   background: rgba(6, 16, 26, 0.98);
   box-shadow: 0 18px 34px rgba(0, 0, 0, 0.34);
+}
+
+.remote-editor-window.active {
+  border-color: rgba(100, 233, 186, 0.58);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(100, 233, 186, 0.2);
+}
+
+.remote-editor-window.maximized,
+.remote-editor-window.minimized {
+  resize: none;
+}
+
+.remote-editor-window.minimized {
+  grid-template-rows: 38px;
+  min-height: 0;
 }
 
 .remote-editor-head,
@@ -1106,6 +1118,11 @@ body,
   padding: 9px 10px;
   border-bottom: 1px solid rgba(146, 202, 255, 0.16);
   background: rgba(8, 20, 31, 0.96);
+}
+
+.remote-editor-head {
+  cursor: move;
+  user-select: none;
 }
 
 .remote-editor-foot {
@@ -1151,6 +1168,33 @@ body,
   gap: 7px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.editor-window-control {
+  width: 28px;
+  height: 26px;
+  border: 1px solid rgba(146, 202, 255, 0.2);
+  border-radius: 7px;
+  color: var(--muted);
+  background: rgba(10, 24, 37, 0.72);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.editor-window-control:hover:not(:disabled) {
+  color: var(--text);
+  border-color: rgba(100, 233, 186, 0.45);
+}
+
+.editor-window-control.danger:hover:not(:disabled) {
+  color: #fff;
+  border-color: rgba(255, 111, 125, 0.62);
+  background: rgba(138, 31, 47, 0.76);
+}
+
+.editor-window-control:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .remote-editor-textarea {

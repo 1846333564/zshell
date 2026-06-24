@@ -147,40 +147,59 @@
     <div v-else class="empty-tip">连接后可浏览远程文件</div>
 
     <Teleport to="body">
-      <div v-if="editor.visible" class="remote-editor-window" @click.stop @contextmenu.prevent.stop>
-        <header class="remote-editor-head">
+      <div
+        v-for="editorWindow in editors"
+        :key="editorWindow.id"
+        class="remote-editor-window"
+        :class="{
+          active: editorWindow.id === activeEditorId,
+          minimized: editorWindow.windowState === 'minimized',
+          maximized: editorWindow.windowState === 'maximized',
+        }"
+        :style="editorWindowStyle(editorWindow)"
+        @mousedown.stop="activateEditor(editorWindow.id)"
+        @click.stop
+        @contextmenu.prevent.stop
+      >
+        <header class="remote-editor-head" @mousedown.prevent.stop="startEditorDrag($event, editorWindow)" @dblclick.stop="toggleMaximizeEditor(editorWindow)">
           <div class="remote-editor-title">
-            <strong>{{ editorTitle }}</strong>
-            <span>{{ editor.path }}</span>
+            <strong>{{ editorTitle(editorWindow) }}{{ editorDirty(editorWindow) ? ' *' : '' }}</strong>
+            <span>{{ editorWindow.path }}</span>
           </div>
-          <div class="remote-editor-actions">
-            <span>{{ editorStatus }}</span>
-            <button class="small-btn" :disabled="!editorDirty || editor.loading || editor.saving" @click="saveEditor">保存</button>
-            <button class="small-btn" :disabled="editor.loading || editor.saving" @click="requestEditorClose">关闭</button>
+          <div class="remote-editor-actions" @mousedown.stop>
+            <span>{{ editorStatus(editorWindow) }}</span>
+            <button class="small-btn" :disabled="!editorDirty(editorWindow) || editorWindow.loading || editorWindow.saving" @click="saveEditor(editorWindow)">保存</button>
+            <button class="editor-window-control" type="button" title="最小化" :disabled="editorWindow.loading || editorWindow.saving" @click="minimizeEditor(editorWindow)">_</button>
+            <button class="editor-window-control" type="button" :title="editorWindow.windowState === 'normal' ? '最大化' : '还原'" :disabled="editorWindow.loading || editorWindow.saving" @click="toggleMaximizeEditor(editorWindow)">
+              {{ editorWindow.windowState === 'normal' ? '□' : '❐' }}
+            </button>
+            <button class="editor-window-control danger" type="button" title="关闭" :disabled="editorWindow.loading || editorWindow.saving" @click="requestEditorClose(editorWindow)">×</button>
           </div>
         </header>
 
         <textarea
+          v-if="editorWindow.windowState !== 'minimized'"
           class="remote-editor-textarea"
-          v-model="editor.content"
-          :disabled="editor.loading || editor.saving"
+          v-model="editorWindow.content"
+          :disabled="editorWindow.loading || editorWindow.saving"
           :spellcheck="false"
+          @focus="activateEditor(editorWindow.id)"
         ></textarea>
 
-        <footer class="remote-editor-foot">
-          <span>{{ editorMeta }}</span>
-          <span class="remote-editor-error">{{ editor.error || '\u00A0' }}</span>
+        <footer v-if="editorWindow.windowState !== 'minimized'" class="remote-editor-foot">
+          <span>{{ editorMeta(editorWindow) }}</span>
+          <span class="remote-editor-error">{{ editorWindow.error || '\u00A0' }}</span>
         </footer>
 
-        <div v-if="editorClosePrompt.visible" class="editor-close-backdrop">
+        <div v-if="editorWindow.closePrompt.visible && editorWindow.windowState !== 'minimized'" class="editor-close-backdrop">
           <section class="editor-close-dialog">
             <strong>文件已修改</strong>
-            <span>{{ editor.path }}</span>
+            <span>{{ editorWindow.path }}</span>
             <div class="editor-close-actions">
-              <button class="small-btn" :disabled="editor.saving" @click="saveEditorFromPrompt">保存</button>
-              <button class="small-btn" :disabled="editor.saving" @click="saveAndCloseEditorFromPrompt">保存并关闭</button>
-              <button class="small-btn danger" :disabled="editor.saving" @click="discardEditorFromPrompt">不保存并关闭</button>
-              <button class="small-btn" :disabled="editor.saving" @click="cancelEditorClosePrompt">取消</button>
+              <button class="small-btn" :disabled="editorWindow.saving" @click="saveEditorFromPrompt(editorWindow)">保存</button>
+              <button class="small-btn" :disabled="editorWindow.saving" @click="saveAndCloseEditorFromPrompt(editorWindow)">保存并关闭</button>
+              <button class="small-btn danger" :disabled="editorWindow.saving" @click="discardEditorFromPrompt(editorWindow)">不保存并关闭</button>
+              <button class="small-btn" :disabled="editorWindow.saving" @click="cancelEditorClosePrompt(editorWindow)">取消</button>
             </div>
           </section>
         </div>
@@ -201,7 +220,7 @@
           <button
             v-for="action in fileOpenActions"
             :key="action.key"
-            :disabled="loading || editor.loading || editor.saving"
+            :disabled="loading"
             @click="runContextFileOpenAction(action.key)"
           >
             {{ action.label }}
@@ -247,6 +266,9 @@ const CLIPBOARD_KEY = 'zshell.remote-file.clipboard.v1';
 const MIN_COLUMN_WIDTH = 70;
 const UPLOAD_CLOSE_DELAY_MS = 1200;
 const DEFAULT_FILE_OPEN_ACTION = 'textEdit';
+const DEFAULT_EDITOR_WIDTH = 980;
+const DEFAULT_EDITOR_HEIGHT = 660;
+const MIN_EDITOR_TOP = 48;
 
 const columns = [
   { key: 'name', label: '名称', width: 280 },
@@ -294,23 +316,8 @@ const uploadProgress = reactive({
   startedAt: 0,
   message: '',
 });
-const editor = reactive({
-  visible: false,
-  loading: false,
-  saving: false,
-  path: '',
-  name: '',
-  content: '',
-  originalContent: '',
-  size: 0,
-  modTime: '',
-  error: '',
-  message: '',
-});
-const editorClosePrompt = reactive({
-  visible: false,
-  afterClose: null,
-});
+const editors = ref([]);
+const activeEditorId = ref('');
 const pathMeta = ref(
   new Map([
     [ROOT_PATH, { opened: false, collapsed: false }],
@@ -319,7 +326,9 @@ const pathMeta = ref(
 );
 
 let resizeState = null;
+let editorDragState = null;
 let uploadCloseTimer = null;
+let editorZIndex = 900;
 
 const contextMenu = reactive({
   visible: false,
@@ -364,30 +373,7 @@ const contextCanOpenDirectory = computed(() => Boolean(contextMenu.entry?.isDir 
 const contextPath = computed(() => contextMenu.entry?.path || contextMenu.targetPath || currentPath.value || HOME_PATH);
 const contextTargetDir = computed(() => (contextMenu.entry?.isDir ? contextMenu.entry.path : contextMenu.targetPath || currentPath.value || HOME_PATH));
 const gridTemplateColumns = computed(() => columns.map((column) => `${columnWidths[column.key]}px`).join(' '));
-const editorDirty = computed(() => editor.visible && editor.content !== editor.originalContent);
-const editorTitle = computed(() => editor.name || displayPath(editor.path) || '远程文件');
-const editorStatus = computed(() => {
-  if (editor.loading) {
-    return '读取中...';
-  }
-  if (editor.saving) {
-    return '保存中...';
-  }
-  if (editorDirty.value) {
-    return '未保存';
-  }
-  return editor.message || '已保存';
-});
-const editorMeta = computed(() => {
-  if (!editor.visible) {
-    return '';
-  }
-  const parts = [formatSize(new Blob([editor.content]).size)];
-  if (editor.modTime) {
-    parts.push(formatTime(editor.modTime));
-  }
-  return parts.join(' · ');
-});
+const activeEditor = computed(() => editors.value.find((item) => item.id === activeEditorId.value) || null);
 
 const statusText = computed(() => {
   if (!props.connectionId) {
@@ -463,6 +449,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('pointerdown', onGlobalPointerDown, true);
   clearUploadCloseTimer();
   stopColumnResize();
+  stopEditorDrag();
 });
 
 async function refresh(targetPath = currentPath.value || HOME_PATH) {
@@ -737,100 +724,275 @@ async function openTextEditor(entry) {
     return;
   }
 
-  const openFile = async () => {
-    editor.visible = true;
-    editor.loading = true;
-    editor.saving = false;
-    editor.path = entry.path;
-    editor.name = entry.name;
-    editor.content = '';
-    editor.originalContent = '';
-    editor.size = Number(entry.size) || 0;
-    editor.modTime = entry.modTime || '';
-    editor.error = '';
-    editor.message = '';
-
-    try {
-      const result = await readRemoteTextFile(props.connectionId, entry.path);
-      const file = result.file || {};
-      const content = String(file.content ?? '');
-      editor.path = String(file.path || entry.path);
-      editor.name = String(file.name || entry.name || displayPath(editor.path));
-      editor.content = content;
-      editor.originalContent = content;
-      editor.size = Number(file.size) || content.length;
-      editor.modTime = String(file.modTime || entry.modTime || '');
-      editor.message = '已打开';
-    } catch (error) {
-      editor.error = error instanceof Error ? error.message : '打开文件失败';
-    } finally {
-      editor.loading = false;
+  const existing = editors.value.find((item) => item.path === entry.path);
+  if (existing) {
+    if (existing.windowState === 'minimized') {
+      existing.windowState = 'normal';
     }
-  };
-
-  if (editorDirty.value) {
-    requestEditorClose({ afterClose: openFile });
+    activateEditor(existing.id);
     return;
   }
 
-  await openFile();
+  const editorWindow = createEditorWindow(entry);
+
+  try {
+    const result = await readRemoteTextFile(props.connectionId, entry.path);
+    const file = result.file || {};
+    const content = String(file.content ?? '');
+    editorWindow.path = String(file.path || entry.path);
+    editorWindow.name = String(file.name || entry.name || displayPath(editorWindow.path));
+    editorWindow.content = content;
+    editorWindow.originalContent = content;
+    editorWindow.size = Number(file.size) || content.length;
+    editorWindow.modTime = String(file.modTime || entry.modTime || '');
+    editorWindow.message = '已打开';
+  } catch (error) {
+    editorWindow.error = error instanceof Error ? error.message : '打开文件失败';
+  } finally {
+    editorWindow.loading = false;
+  }
 }
 
-async function saveEditor() {
-  if (!props.connectionId || !editor.visible || !editor.path || editor.loading || editor.saving) {
+function createEditorWindow(entry) {
+  const bounds = defaultEditorBounds();
+  const editorWindow = {
+    id: crypto.randomUUID(),
+    windowState: 'normal',
+    loading: true,
+    saving: false,
+    path: entry.path,
+    name: entry.name,
+    content: '',
+    originalContent: '',
+    size: Number(entry.size) || 0,
+    modTime: entry.modTime || '',
+    error: '',
+    message: '',
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    zIndex: nextEditorZIndex(),
+    closePrompt: {
+      visible: false,
+      afterClose: null,
+    },
+  };
+  editors.value.push(editorWindow);
+  activeEditorId.value = editorWindow.id;
+  return editorWindow;
+}
+
+function defaultEditorBounds() {
+  const viewportWidth = window.innerWidth || 1200;
+  const viewportHeight = window.innerHeight || 780;
+  const width = Math.min(DEFAULT_EDITOR_WIDTH, Math.max(520, viewportWidth - 64));
+  const height = Math.min(DEFAULT_EDITOR_HEIGHT, Math.max(360, viewportHeight - 126));
+  const offset = (editors.value.length % 7) * 26;
+  const centeredX = Math.max(16, Math.round((viewportWidth - width) / 2));
+  return {
+    x: Math.min(Math.max(16, centeredX + offset), Math.max(16, viewportWidth - 120)),
+    y: Math.min(MIN_EDITOR_TOP + offset, Math.max(MIN_EDITOR_TOP, viewportHeight - 120)),
+    width,
+    height,
+  };
+}
+
+function nextEditorZIndex() {
+  editorZIndex += 1;
+  return editorZIndex;
+}
+
+function activateEditor(id) {
+  const editorWindow = editors.value.find((item) => item.id === id);
+  if (!editorWindow) {
+    return;
+  }
+  activeEditorId.value = id;
+  editorWindow.zIndex = nextEditorZIndex();
+}
+
+function editorDirty(editorWindow) {
+  return Boolean(editorWindow && editorWindow.content !== editorWindow.originalContent);
+}
+
+function editorTitle(editorWindow) {
+  return editorWindow?.name || displayPath(editorWindow?.path) || '远程文件';
+}
+
+function editorStatus(editorWindow) {
+  if (editorWindow.loading) {
+    return '读取中...';
+  }
+  if (editorWindow.saving) {
+    return '保存中...';
+  }
+  if (editorDirty(editorWindow)) {
+    return '未保存';
+  }
+  return editorWindow.message || '已保存';
+}
+
+function editorMeta(editorWindow) {
+  if (!editorWindow) {
+    return '';
+  }
+  const parts = [formatSize(new Blob([editorWindow.content]).size)];
+  if (editorWindow.modTime) {
+    parts.push(formatTime(editorWindow.modTime));
+  }
+  return parts.join(' · ');
+}
+
+function editorWindowStyle(editorWindow) {
+  if (editorWindow.windowState === 'minimized') {
+    const minimizedIndex = editors.value.filter((item) => item.windowState === 'minimized').findIndex((item) => item.id === editorWindow.id);
+    return {
+      left: `${16 + Math.max(0, minimizedIndex) * 252}px`,
+      bottom: '14px',
+      width: '240px',
+      height: '38px',
+      zIndex: editorWindow.zIndex,
+    };
+  }
+  if (editorWindow.windowState === 'maximized') {
+    return {
+      left: '12px',
+      top: '50px',
+      width: 'calc(100vw - 24px)',
+      height: 'calc(100vh - 62px)',
+      zIndex: editorWindow.zIndex,
+    };
+  }
+  return {
+    left: `${editorWindow.x}px`,
+    top: `${editorWindow.y}px`,
+    width: `${editorWindow.width}px`,
+    height: `${editorWindow.height}px`,
+    zIndex: editorWindow.zIndex,
+  };
+}
+
+function minimizeEditor(editorWindow) {
+  if (!editorWindow) {
+    return;
+  }
+  editorWindow.windowState = 'minimized';
+  activateEditor(editorWindow.id);
+}
+
+function toggleMaximizeEditor(editorWindow) {
+  if (!editorWindow) {
+    return;
+  }
+  editorWindow.windowState = editorWindow.windowState === 'normal' ? 'maximized' : 'normal';
+  activateEditor(editorWindow.id);
+}
+
+function startEditorDrag(event, editorWindow) {
+  if (!editorWindow || editorWindow.windowState !== 'normal' || event.button !== 0) {
+    return;
+  }
+
+  activateEditor(editorWindow.id);
+  editorDragState = {
+    id: editorWindow.id,
+    startX: event.clientX,
+    startY: event.clientY,
+    originX: editorWindow.x,
+    originY: editorWindow.y,
+  };
+  document.body.style.cursor = 'move';
+  document.body.style.userSelect = 'none';
+  window.addEventListener('mousemove', onEditorDrag);
+  window.addEventListener('mouseup', stopEditorDrag);
+}
+
+function onEditorDrag(event) {
+  if (!editorDragState) {
+    return;
+  }
+  const editorWindow = editors.value.find((item) => item.id === editorDragState.id);
+  if (!editorWindow) {
+    stopEditorDrag();
+    return;
+  }
+
+  const maxX = Math.max(16, (window.innerWidth || 1200) - 120);
+  const maxY = Math.max(MIN_EDITOR_TOP, (window.innerHeight || 780) - 60);
+  editorWindow.x = Math.min(maxX, Math.max(16, editorDragState.originX + event.clientX - editorDragState.startX));
+  editorWindow.y = Math.min(maxY, Math.max(MIN_EDITOR_TOP, editorDragState.originY + event.clientY - editorDragState.startY));
+}
+
+function stopEditorDrag() {
+  if (!editorDragState) {
+    return;
+  }
+  editorDragState = null;
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+  window.removeEventListener('mousemove', onEditorDrag);
+  window.removeEventListener('mouseup', stopEditorDrag);
+}
+
+async function saveEditor(editorWindow) {
+  if (!props.connectionId || !editorWindow || !editorWindow.path || editorWindow.loading || editorWindow.saving) {
     return false;
   }
 
-  editor.saving = true;
-  editor.error = '';
-  editor.message = '';
-  const content = editor.content;
+  editorWindow.saving = true;
+  editorWindow.error = '';
+  editorWindow.message = '';
+  const content = editorWindow.content;
 
   try {
-    const result = await saveRemoteTextFile(props.connectionId, editor.path, content);
+    const result = await saveRemoteTextFile(props.connectionId, editorWindow.path, content);
     const file = result.file || {};
-    editor.path = String(file.path || editor.path);
-    editor.name = String(file.name || editor.name || displayPath(editor.path));
-    editor.originalContent = content;
-    editor.size = Number(file.size) || new Blob([content]).size;
-    editor.modTime = String(file.modTime || '');
-    editor.message = '已保存';
+    editorWindow.path = String(file.path || editorWindow.path);
+    editorWindow.name = String(file.name || editorWindow.name || displayPath(editorWindow.path));
+    editorWindow.originalContent = content;
+    editorWindow.size = Number(file.size) || new Blob([content]).size;
+    editorWindow.modTime = String(file.modTime || '');
+    editorWindow.message = '已保存';
     await refresh(currentPath.value || HOME_PATH);
     return true;
   } catch (error) {
-    editor.error = error instanceof Error ? error.message : '保存失败';
+    editorWindow.error = error instanceof Error ? error.message : '保存失败';
     return false;
   } finally {
-    editor.saving = false;
+    editorWindow.saving = false;
   }
 }
 
-function requestEditorClose(options = {}) {
+function requestEditorClose(editorWindow, options = {}) {
   const afterClose = typeof options.afterClose === 'function' ? options.afterClose : null;
-  if (!editor.visible || !editorDirty.value) {
-    closeEditorImmediately();
+  if (!editorWindow || !editorDirty(editorWindow)) {
+    closeEditorImmediately(editorWindow);
     runAfterEditorClose(afterClose);
     return;
   }
 
-  editorClosePrompt.visible = true;
-  editorClosePrompt.afterClose = afterClose;
+  editorWindow.closePrompt.visible = true;
+  editorWindow.closePrompt.afterClose = afterClose;
+  if (editorWindow.windowState === 'minimized') {
+    editorWindow.windowState = 'normal';
+  }
+  activateEditor(editorWindow.id);
 }
 
-function closeEditorImmediately() {
-  editor.visible = false;
-  editor.loading = false;
-  editor.saving = false;
-  editor.path = '';
-  editor.name = '';
-  editor.content = '';
-  editor.originalContent = '';
-  editor.size = 0;
-  editor.modTime = '';
-  editor.error = '';
-  editor.message = '';
-  editorClosePrompt.visible = false;
-  editorClosePrompt.afterClose = null;
+function closeEditorImmediately(editorWindow) {
+  if (!editorWindow) {
+    return;
+  }
+  const index = editors.value.findIndex((item) => item.id === editorWindow.id);
+  if (index === -1) {
+    return;
+  }
+  editors.value.splice(index, 1);
+  if (activeEditorId.value === editorWindow.id) {
+    const next = [...editors.value].sort((left, right) => right.zIndex - left.zIndex)[0];
+    activeEditorId.value = next?.id || '';
+  }
 }
 
 async function runAfterEditorClose(afterClose) {
@@ -839,33 +1001,36 @@ async function runAfterEditorClose(afterClose) {
   }
 }
 
-async function saveEditorFromPrompt() {
-  const saved = await saveEditor();
+async function saveEditorFromPrompt(editorWindow) {
+  const saved = await saveEditor(editorWindow);
   if (saved) {
-    editorClosePrompt.visible = false;
-    editorClosePrompt.afterClose = null;
+    editorWindow.closePrompt.visible = false;
+    editorWindow.closePrompt.afterClose = null;
   }
 }
 
-async function saveAndCloseEditorFromPrompt() {
-  const afterClose = editorClosePrompt.afterClose;
-  const saved = await saveEditor();
+async function saveAndCloseEditorFromPrompt(editorWindow) {
+  const afterClose = editorWindow.closePrompt.afterClose;
+  const saved = await saveEditor(editorWindow);
   if (!saved) {
     return;
   }
-  closeEditorImmediately();
+  closeEditorImmediately(editorWindow);
   await runAfterEditorClose(afterClose);
 }
 
-async function discardEditorFromPrompt() {
-  const afterClose = editorClosePrompt.afterClose;
-  closeEditorImmediately();
+async function discardEditorFromPrompt(editorWindow) {
+  const afterClose = editorWindow.closePrompt.afterClose;
+  closeEditorImmediately(editorWindow);
   await runAfterEditorClose(afterClose);
 }
 
-function cancelEditorClosePrompt() {
-  editorClosePrompt.visible = false;
-  editorClosePrompt.afterClose = null;
+function cancelEditorClosePrompt(editorWindow) {
+  if (!editorWindow) {
+    return;
+  }
+  editorWindow.closePrompt.visible = false;
+  editorWindow.closePrompt.afterClose = null;
 }
 
 function selectEntry(entry, index, event) {
@@ -1265,14 +1430,15 @@ function onStorage(event) {
 
 function onKeydown(event) {
   const key = event.key.toLowerCase();
-  if ((event.ctrlKey || event.metaKey) && key === 's' && editor.visible) {
+  const currentEditor = activeEditor.value;
+  if ((event.ctrlKey || event.metaKey) && key === 's' && currentEditor) {
     event.preventDefault();
-    saveEditor();
+    saveEditor(currentEditor);
     return;
   }
   if (event.key === 'Escape') {
-    if (editorClosePrompt.visible) {
-      cancelEditorClosePrompt();
+    if (currentEditor?.closePrompt.visible) {
+      cancelEditorClosePrompt(currentEditor);
       return;
     }
     hideContextMenu();

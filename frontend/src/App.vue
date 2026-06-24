@@ -116,6 +116,8 @@
               :key="activeSession.connectionId"
               :connection-id="activeSession.connectionId"
               :connection-name="activeSession.connectionName"
+              :terminal-font-size="terminalFontSize"
+              @terminal-font-size-change="handleTerminalFontSizeChange"
             />
           </div>
 
@@ -213,6 +215,7 @@ const connectError = ref('');
 const consoleHeightPercent = ref(58);
 const isDragging = ref(false);
 const uiScale = ref(1);
+const terminalFontSize = ref(14);
 const savedConnections = ref([]);
 const draftConnection = ref(defaultConnectionDraft());
 const editingConnectionId = ref('');
@@ -517,6 +520,36 @@ function openReleasePage() {
   window.open(url, '_blank', 'noopener');
 }
 
+function scheduleStartupUpdateCheck() {
+  startupUpdateTimer = window.setTimeout(runStartupUpdateCheck, 1500);
+}
+
+async function runStartupUpdateCheck() {
+  startupUpdateTimer = null;
+  try {
+    const result = await checkForUpdate();
+    const update = result.update || {};
+    if (!update.available || updateDialog.value.visible) {
+      return;
+    }
+    const currentVersion = update.currentVersion || appInfo.value.version || '0.0.1';
+    const latestVersion = update.latestVersion || currentVersion;
+    updateDialog.value = {
+      visible: true,
+      status: 'ready',
+      available: true,
+      title: '发现新版本',
+      subtitle: `${currentVersion} -> ${latestVersion}`,
+      message: '是否确认更新？确认后会下载新版本、替换当前程序并自动重启。',
+      notes: update.notes || '',
+      error: '',
+      releaseUrl: update.releaseUrl || releaseLatestURL,
+    };
+  } catch (error) {
+    console.warn('startup update check failed', error);
+  }
+}
+
 function closeUpdateDialog() {
   if (updateDialog.value.status === 'applying') {
     return;
@@ -529,12 +562,14 @@ onMounted(() => {
   loadAppInfo();
   applyUiScale();
   loadUIPreferences();
+  scheduleStartupUpdateCheck();
   window.addEventListener('keydown', handleGlobalKeydown, true);
 });
 
 let moveHandler = null;
 let upHandler = null;
 let saveUiScaleTimer = null;
+let startupUpdateTimer = null;
 
 function startDrag(event) {
   event.preventDefault();
@@ -633,19 +668,40 @@ async function loadUIPreferences() {
   try {
     const result = await getUIPreferences();
     setUiScale(result?.preferences?.uiScale || 1, false);
+    terminalFontSize.value = clampTerminalFontSize(result?.preferences?.terminalFontSize || 14);
   } catch (error) {
     console.warn('load ui preferences failed', error);
   }
 }
 
 function scheduleSaveUiScale() {
+  scheduleSavePreferences();
+}
+
+function handleTerminalFontSizeChange(value) {
+  terminalFontSize.value = clampTerminalFontSize(value);
+  scheduleSavePreferences();
+}
+
+function clampTerminalFontSize(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 14;
+  }
+  return Math.min(28, Math.max(10, Math.round(parsed)));
+}
+
+function scheduleSavePreferences() {
   if (saveUiScaleTimer) {
     window.clearTimeout(saveUiScaleTimer);
   }
   saveUiScaleTimer = window.setTimeout(async () => {
     saveUiScaleTimer = null;
     try {
-      await saveUIPreferences({ uiScale: uiScale.value });
+      await saveUIPreferences({
+        uiScale: uiScale.value,
+        terminalFontSize: terminalFontSize.value,
+      });
     } catch (error) {
       console.warn('save ui preferences failed', error);
     }
@@ -686,6 +742,9 @@ function callWindowRuntime(method) {
 onBeforeUnmount(() => {
   document.body.style.userSelect = '';
   window.removeEventListener('keydown', handleGlobalKeydown, true);
+  if (startupUpdateTimer) {
+    window.clearTimeout(startupUpdateTimer);
+  }
   if (saveUiScaleTimer) {
     window.clearTimeout(saveUiScaleTimer);
   }

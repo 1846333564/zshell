@@ -17,7 +17,7 @@ Go 后端负责 Wails 应用启动、本地 API 服务、动态端口绑定和 r
 
 后端会在动态高端口启动本地 API/WebSocket 服务，并通过 Wails 加载前端资源。Wails 使用无边框 Windows 窗口，同时保留 WebView 右键事件，使 Vue 可以渲染自定义文件管理器菜单并屏蔽非文件区菜单。保存的连接配置在 API 服务启动时加载进内存，供终端、SFTP 和监控流程使用。
 
-release 构建脚本会检查 npm、Go 和 Wails 原生命令退出码，读取 `VERSION`，通过 ldflags 注入运行时版本号，并把最终 exe 复制到项目 `release` 文件夹，文件名为 `zshell.<版本号>.exe`。
+release 构建脚本会检查 npm、Go 和 Wails 原生命令退出码，读取 `VERSION`，通过 ldflags 注入运行时版本号，并把最终 exe 复制到项目 `release` 文件夹，文件名为 `zshell.<版本号>.exe`。脚本只覆盖当前版本对应的 exe，不自动删除旧版本本地 release 包。
 
 ## 已知工作
 

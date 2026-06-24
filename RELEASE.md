@@ -23,7 +23,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build-windows.ps1
 - `wails build`
 - 输出 `release\zshell.<版本号>.exe`
 
-每次构建后，`release` 文件夹只保留一个 `.exe`。
+每次构建后，脚本只覆盖当前版本对应的 `.exe`。`release` 文件夹中的旧版本本地包不会自动删除，由用户手动清理。
 
 ## GitHub Release
 
@@ -34,7 +34,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build-windows.ps1
 - 推送 tag，例如 `v0.0.1`。
 - 或在 GitHub Actions 中手动触发“发布 zShell”，填写版本号。
 
-工作流会在 Windows runner 上构建 exe，生成 SHA256 校验文件，并创建或更新 GitHub Release。Release 资产命名为：
+工作流会在 Windows runner 上构建 exe，生成 SHA256 校验文件，并创建或更新 GitHub Release。`.github/release-names.json` 可以为指定版本配置 Release 标题；未配置时标题默认为 `zShell <版本号>`。Release 资产命名为：
 
 ```text
 zshell.<版本号>.exe

@@ -21,7 +21,8 @@ type File struct {
 }
 
 type Preferences struct {
-	UIScale float64 `json:"uiScale,omitempty"`
+	UIScale          float64 `json:"uiScale,omitempty"`
+	TerminalFontSize int     `json:"terminalFontSize,omitempty"`
 }
 
 func NewDefault() (*Store, error) {

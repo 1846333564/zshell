@@ -61,9 +61,9 @@ try {
     throw "Wails build did not produce $builtExe"
   }
   New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
-  $releaseRoot = [System.IO.Path]::GetFullPath($releaseDir).TrimEnd('\') + '\'
+  $outputExeFull = [System.IO.Path]::GetFullPath($outputExe)
   $runningOutput = Get-Process | Where-Object {
-    $_.Path -and [System.IO.Path]::GetFullPath($_.Path).StartsWith($releaseRoot, [System.StringComparison]::OrdinalIgnoreCase)
+    $_.Path -and [System.IO.Path]::GetFullPath($_.Path).Equals($outputExeFull, [System.StringComparison]::OrdinalIgnoreCase)
   }
   if ($runningOutput) {
     $runningOutput | Stop-Process -Force
@@ -72,7 +72,6 @@ try {
     }
     Start-Sleep -Milliseconds 300
   }
-  Get-ChildItem -LiteralPath $releaseDir -Filter '*.exe' -File -ErrorAction SilentlyContinue | Remove-Item -Force
   Copy-Item -LiteralPath $builtExe -Destination $outputExe -Force
 } finally {
   Pop-Location

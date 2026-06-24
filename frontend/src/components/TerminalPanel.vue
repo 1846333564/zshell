@@ -47,7 +47,12 @@ const props = defineProps({
 		type: Boolean,
 		default: false,
 	},
+  terminalFontSize: {
+    type: Number,
+    default: 14,
+  },
 });
+const emit = defineEmits(['terminal-font-size-change']);
 const terminalMount = ref(null);
 const terminalMenu = reactive({
   visible: false,
@@ -60,7 +65,7 @@ let term;
 let fitAddon;
 let wsClient;
 let resizeObserver;
-let terminalFontSize = 14;
+let currentTerminalFontSize = normalizeTerminalFontSize(props.terminalFontSize);
 
 const online = ref(false);
 
@@ -68,7 +73,7 @@ onMounted(async () => {
   term = new Terminal({
     cursorBlink: true,
     convertEol: true,
-    fontSize: terminalFontSize,
+    fontSize: currentTerminalFontSize,
     lineHeight: 1.3,
     theme: {
       background: '#030a14',
@@ -159,6 +164,18 @@ watch(
   },
 );
 
+watch(
+  () => props.terminalFontSize,
+  (value) => {
+    const next = normalizeTerminalFontSize(value);
+    if (next === currentTerminalFontSize) {
+      return;
+    }
+    currentTerminalFontSize = next;
+    applyTerminalFontSize();
+  },
+);
+
 async function connect() {
   disconnect();
   term.writeln('\r\n[connecting]');
@@ -227,8 +244,7 @@ function handleTerminalShortcut(event) {
   }
 
   if (key === '0') {
-    terminalFontSize = 14;
-    applyTerminalFontSize();
+    setTerminalFontSize(14);
     event.preventDefault();
     return false;
   }
@@ -237,19 +253,36 @@ function handleTerminalShortcut(event) {
 }
 
 function adjustTerminalFontSize(delta) {
-  terminalFontSize = Math.min(28, Math.max(10, terminalFontSize + delta));
+  setTerminalFontSize(currentTerminalFontSize + delta);
+}
+
+function setTerminalFontSize(value) {
+  const next = normalizeTerminalFontSize(value);
+  if (next === currentTerminalFontSize) {
+    return;
+  }
+  currentTerminalFontSize = next;
   applyTerminalFontSize();
+  emit('terminal-font-size-change', currentTerminalFontSize);
 }
 
 function applyTerminalFontSize() {
   if (!term || !fitAddon) {
     return;
   }
-  term.options.fontSize = terminalFontSize;
+  term.options.fontSize = currentTerminalFontSize;
   fitAddon.fit();
   if (online.value && wsClient) {
     wsClient.sendResize(term.cols, term.rows);
   }
+}
+
+function normalizeTerminalFontSize(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 14;
+  }
+  return Math.min(28, Math.max(10, Math.round(parsed)));
 }
 
 function copyTerminalSelection() {

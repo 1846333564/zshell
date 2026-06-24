@@ -27,6 +27,8 @@
         :connection-name="connectionName"
         :tab-title="tab.title"
         :active="tab.id === activeTabId"
+        :terminal-font-size="terminalFontSize"
+        @terminal-font-size-change="emit('terminal-font-size-change', $event)"
       />
     </div>
   </div>
@@ -45,7 +47,13 @@ const props = defineProps({
     type: String,
     default: '默认连接',
   },
+  terminalFontSize: {
+    type: Number,
+    default: 14,
+  },
 });
+
+const emit = defineEmits(['terminal-font-size-change']);
 
 const tabs = ref([{ id: crypto.randomUUID(), title: '终端 1' }]);
 const activeTabId = ref(tabs.value[0].id);

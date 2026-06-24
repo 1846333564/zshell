@@ -48,8 +48,17 @@ jobs:
             throw "版本号格式无效: $version"
           }
           Set-Content -LiteralPath VERSION -Value $version -NoNewline
+          $releaseTitle = "zShell $version"
+          $releaseNamesPath = ".github\release-names.json"
+          if (Test-Path -LiteralPath $releaseNamesPath) {
+            $releaseNames = Get-Content -LiteralPath $releaseNamesPath -Raw | ConvertFrom-Json -AsHashtable
+            if ($releaseNames.ContainsKey($version) -and -not [string]::IsNullOrWhiteSpace([string]$releaseNames[$version])) {
+              $releaseTitle = [string]$releaseNames[$version]
+            }
+          }
           "ZSHELL_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "ZSHELL_TAG=v$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ZSHELL_RELEASE_TITLE=$releaseTitle" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: 构建 release 可执行文件
         shell: pwsh
@@ -69,7 +78,7 @@ jobs:
         shell: pwsh
         run: |
           @(
-            "zShell $env:ZSHELL_VERSION",
+            "$env:ZSHELL_RELEASE_TITLE",
             "",
             "- Windows 免安装可执行文件",
             "- 下载 zshell.$env:ZSHELL_VERSION.exe 后可直接运行"
@@ -84,7 +93,8 @@ jobs:
           $sha = "$exe.sha256"
           gh release view $env:ZSHELL_TAG *> $null
           if ($LASTEXITCODE -eq 0) {
+            gh release edit $env:ZSHELL_TAG --title "$env:ZSHELL_RELEASE_TITLE" --notes-file RELEASE_NOTES.md --latest
             gh release upload $env:ZSHELL_TAG $exe $sha --clobber
           } else {
-            gh release create $env:ZSHELL_TAG $exe $sha --title "zShell $env:ZSHELL_VERSION" --notes-file RELEASE_NOTES.md --latest
+            gh release create $env:ZSHELL_TAG $exe $sha --title "$env:ZSHELL_RELEASE_TITLE" --notes-file RELEASE_NOTES.md --latest
           }

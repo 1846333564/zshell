@@ -128,7 +128,8 @@ type monitorSnapshotRequest struct {
 }
 
 type uiPreferencesRequest struct {
-	UIScale float64 `json:"uiScale"`
+	UIScale          *float64 `json:"uiScale"`
+	TerminalFontSize *int     `json:"terminalFontSize"`
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -221,7 +222,17 @@ func (s *Server) handleUIPreferences(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		preferences := configstore.Preferences{UIScale: normalizeUIScale(req.UIScale)}
+		preferences, err := s.loadUIPreferences()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if req.UIScale != nil {
+			preferences.UIScale = normalizeUIScale(*req.UIScale)
+		}
+		if req.TerminalFontSize != nil {
+			preferences.TerminalFontSize = normalizeTerminalFontSize(*req.TerminalFontSize)
+		}
 		if err := s.saveUIPreferences(preferences); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -712,6 +723,7 @@ func (s *Server) loadUIPreferences() (configstore.Preferences, error) {
 		return configstore.Preferences{}, err
 	}
 	preferences.UIScale = normalizeUIScale(preferences.UIScale)
+	preferences.TerminalFontSize = normalizeTerminalFontSize(preferences.TerminalFontSize)
 	return preferences, nil
 }
 
@@ -720,6 +732,7 @@ func (s *Server) saveUIPreferences(preferences configstore.Preferences) error {
 		return errors.New("connection config store unavailable")
 	}
 	preferences.UIScale = normalizeUIScale(preferences.UIScale)
+	preferences.TerminalFontSize = normalizeTerminalFontSize(preferences.TerminalFontSize)
 	return s.configStore.SavePreferences(preferences)
 }
 
@@ -729,6 +742,19 @@ func normalizeUIScale(value float64) float64 {
 	}
 	value = math.Min(1.35, math.Max(0.82, value))
 	return math.Round(value*100) / 100
+}
+
+func normalizeTerminalFontSize(value int) int {
+	if value <= 0 {
+		return 14
+	}
+	if value < 10 {
+		return 10
+	}
+	if value > 28 {
+		return 28
+	}
+	return value
 }
 
 func normalizeAuthMethod(value string) string {
