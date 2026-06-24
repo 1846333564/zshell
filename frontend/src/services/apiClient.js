@@ -189,6 +189,23 @@ export async function uploadRemoteFile(connectionId, path, file, onProgress) {
 }
 
 export async function uploadRemoteItems(connectionId, path, items, directories = [], onProgress) {
+  const formData = buildUploadFormData(connectionId, path, items, directories);
+  if (typeof onProgress === 'function') {
+    return uploadRemoteItemsWithProgress(formData, onProgress);
+  }
+
+  const response = await fetch(apiUrl('/api/sftp/upload'), {
+    method: 'POST',
+    body: formData,
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(body.error || `upload failed: ${response.status}`);
+  }
+  return body;
+}
+
+function buildUploadFormData(connectionId, path, items, directories = []) {
   const formData = new FormData();
   formData.append('connectionId', connectionId);
   formData.append('path', path);
@@ -202,33 +219,68 @@ export async function uploadRemoteItems(connectionId, path, items, directories =
     formData.append('directories', directory);
   }
 
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', apiUrl('/api/sftp/upload'), true);
+  return formData;
+}
 
-    xhr.upload.onprogress = (event) => {
-      if (typeof onProgress === 'function') {
-        onProgress({
-          loaded: event.loaded,
-          total: event.total,
-          lengthComputable: event.lengthComputable,
-        });
-      }
-    };
-
-    xhr.onload = () => {
-      const body = parseJson(xhr.responseText);
-      if (xhr.status < 200 || xhr.status >= 300) {
-        reject(new Error(body.error || `upload failed: ${xhr.status}`));
-        return;
-      }
-      resolve(body);
-    };
-
-    xhr.onerror = () => reject(new Error('upload failed: network error'));
-    xhr.onabort = () => reject(new Error('upload failed: aborted'));
-    xhr.send(formData);
+async function uploadRemoteItemsWithProgress(formData, onProgress) {
+  const response = await fetch(apiUrl('/api/sftp/upload/stream'), {
+    method: 'POST',
+    body: formData,
   });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || `upload failed: ${response.status}`);
+  }
+  if (!response.body) {
+    return response.json();
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let result = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const event = parseJson(line.trim());
+      if (!event.type) {
+        continue;
+      }
+      if (event.type === 'progress') {
+        onProgress(event.progress || {});
+        continue;
+      }
+      if (event.type === 'error') {
+        throw new Error(event.error || '上传失败');
+      }
+      if (event.type === 'result') {
+        result = event.upload || {};
+      }
+    }
+
+    if (done) {
+      break;
+    }
+  }
+
+  if (buffer.trim()) {
+    const event = parseJson(buffer.trim());
+    if (event.type === 'progress') {
+      onProgress(event.progress || {});
+    } else if (event.type === 'error') {
+      throw new Error(event.error || '上传失败');
+    } else if (event.type === 'result') {
+      result = event.upload || {};
+    }
+  }
+
+  return result || {};
 }
 
 export function getMonitorSnapshot(connectionId, processSort) {

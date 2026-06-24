@@ -71,6 +71,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/ssh/exec", s.handleSSHExec)
 	mux.HandleFunc("/api/sftp/list", s.handleSFTPList)
 	mux.HandleFunc("/api/sftp/upload", s.handleSFTPUpload)
+	mux.HandleFunc("/api/sftp/upload/stream", s.handleSFTPUploadStream)
 	mux.HandleFunc("/api/sftp/download", s.handleSFTPDownload)
 	mux.HandleFunc("/api/sftp/file/read", s.handleSFTPFileRead)
 	mux.HandleFunc("/api/sftp/file/write", s.handleSFTPFileWrite)
@@ -508,6 +509,86 @@ func (s *Server) handleSFTPUpload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, payload)
 }
 
+func (s *Server) handleSFTPUploadStream(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if err := r.ParseMultipartForm(64 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("parse multipart: %v", err))
+		return
+	}
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
+	}
+
+	connectionID := strings.TrimSpace(r.FormValue("connectionId"))
+	remoteDir := strings.TrimSpace(r.FormValue("path"))
+	if connectionID == "" {
+		writeError(w, http.StatusBadRequest, "connectionId is required")
+		return
+	}
+
+	conn, ok := s.store.Get(connectionID)
+	if !ok {
+		writeError(w, http.StatusNotFound, "connection not found")
+		return
+	}
+
+	files, directories := multipartUploadItems(r.MultipartForm)
+	if len(files) == 0 && len(directories) == 0 {
+		writeError(w, http.StatusBadRequest, "at least one file or directory is required")
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "streaming is not supported")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/x-ndjson; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+
+	encoder := json.NewEncoder(w)
+	writeEvent := func(payload map[string]any) {
+		_ = encoder.Encode(payload)
+		flusher.Flush()
+	}
+
+	result, err := sftpsvc.UploadFilesWithProgress(conn, remoteDir, files, directories, s.sshTimeout, func(event sftpsvc.UploadProgressEvent) {
+		writeEvent(map[string]any{
+			"type":     "progress",
+			"progress": event,
+		})
+	})
+	if err != nil {
+		writeEvent(map[string]any{
+			"type":  "error",
+			"error": err.Error(),
+		})
+		return
+	}
+
+	payload := map[string]any{
+		"ok":          result.OK,
+		"files":       result.Files,
+		"directories": result.Directories,
+		"totalSize":   result.TotalSize,
+	}
+	if len(result.Files) == 1 {
+		payload["remotePath"] = result.Files[0].RemotePath
+		payload["size"] = result.Files[0].Size
+	}
+	writeEvent(map[string]any{
+		"type":   "result",
+		"upload": payload,
+	})
+}
+
 func (s *Server) handleSFTPDownload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -882,6 +963,7 @@ func multipartUploadItems(form *multipart.Form) ([]sftpsvc.UploadItem, []string)
 		files = append(files, sftpsvc.UploadItem{
 			FileName:     header.Filename,
 			RelativePath: relativePath,
+			Size:         header.Size,
 			Open: func() (io.ReadCloser, error) {
 				return header.Open()
 			},

@@ -40,6 +40,7 @@ type TextFile struct {
 type UploadItem struct {
 	FileName     string
 	RelativePath string
+	Size         int64
 	Open         func() (io.ReadCloser, error)
 }
 
@@ -54,6 +55,24 @@ type UploadBatchResult struct {
 	Directories []string       `json:"directories"`
 	TotalSize   int64          `json:"totalSize"`
 }
+
+type UploadProgressEvent struct {
+	Stage          string `json:"stage"`
+	FileIndex      int    `json:"fileIndex"`
+	FileName       string `json:"fileName,omitempty"`
+	RelativePath   string `json:"relativePath,omitempty"`
+	RemotePath     string `json:"remotePath,omitempty"`
+	FileLoaded     int64  `json:"fileLoaded"`
+	FileTotal      int64  `json:"fileTotal"`
+	LoadedBytes    int64  `json:"loadedBytes"`
+	TotalBytes     int64  `json:"totalBytes"`
+	CompletedFiles int    `json:"completedFiles"`
+	TotalFiles     int    `json:"totalFiles"`
+	DirectoryCount int    `json:"directoryCount"`
+	Message        string `json:"message,omitempty"`
+}
+
+type UploadProgressReporter func(UploadProgressEvent)
 
 type TransferItem struct {
 	Path  string `json:"path"`
@@ -133,6 +152,10 @@ func ListDirectory(conn model.Connection, remotePath string, timeout time.Durati
 }
 
 func UploadFiles(conn model.Connection, remoteDir string, files []UploadItem, directories []string, timeout time.Duration) (UploadBatchResult, error) {
+	return UploadFilesWithProgress(conn, remoteDir, files, directories, timeout, nil)
+}
+
+func UploadFilesWithProgress(conn model.Connection, remoteDir string, files []UploadItem, directories []string, timeout time.Duration, report UploadProgressReporter) (UploadBatchResult, error) {
 	client, err := sshsvc.SharedClient(conn, timeout)
 	if err != nil {
 		return UploadBatchResult{}, err
@@ -155,6 +178,16 @@ func UploadFiles(conn model.Connection, remoteDir string, files []UploadItem, di
 		Files:       make([]UploadResult, 0, len(files)),
 		Directories: make([]string, 0, len(directories)),
 	}
+	totalBytes := uploadTotalSize(files)
+	loadedBytes := int64(0)
+	completedFiles := 0
+	reportUploadProgress(report, UploadProgressEvent{
+		Stage:          "preparing",
+		TotalBytes:     totalBytes,
+		TotalFiles:     len(files),
+		DirectoryCount: len(directories),
+		Message:        "正在准备远程上传",
+	})
 
 	for _, dir := range directories {
 		relativeDir, err := cleanRelativePath(dir, "")
@@ -172,7 +205,7 @@ func UploadFiles(conn model.Connection, remoteDir string, files []UploadItem, di
 		result.Directories = append(result.Directories, remotePath)
 	}
 
-	for _, item := range files {
+	for index, item := range files {
 		targetRelative, err := cleanRelativePath(item.RelativePath, item.FileName)
 		if err != nil {
 			return UploadBatchResult{}, fmt.Errorf("invalid upload path %q: %w", item.RelativePath, err)
@@ -182,6 +215,20 @@ func UploadFiles(conn model.Connection, remoteDir string, files []UploadItem, di
 		}
 
 		remotePath := path.Join(resolvedDir, targetRelative)
+		reportUploadProgress(report, UploadProgressEvent{
+			Stage:          "file",
+			FileIndex:      index,
+			FileName:       item.FileName,
+			RelativePath:   targetRelative,
+			RemotePath:     remotePath,
+			FileTotal:      item.Size,
+			LoadedBytes:    loadedBytes,
+			TotalBytes:     totalBytes,
+			CompletedFiles: completedFiles,
+			TotalFiles:     len(files),
+			DirectoryCount: len(directories),
+			Message:        "正在上传远程文件",
+		})
 		if parent := path.Dir(remotePath); parent != "." && parent != "/" {
 			if err := sftpClient.MkdirAll(parent); err != nil {
 				return UploadBatchResult{}, fmt.Errorf("create remote parent %s: %w", parent, err)
@@ -193,7 +240,24 @@ func UploadFiles(conn model.Connection, remoteDir string, files []UploadItem, di
 			return UploadBatchResult{}, fmt.Errorf("open upload source %s: %w", item.FileName, err)
 		}
 
-		written, uploadErr := uploadToPath(sftpClient, remotePath, source)
+		throttledReport := newUploadProgressThrottle(func(fileLoaded int64, force bool) {
+			reportUploadProgress(report, UploadProgressEvent{
+				Stage:          "file",
+				FileIndex:      index,
+				FileName:       item.FileName,
+				RelativePath:   targetRelative,
+				RemotePath:     remotePath,
+				FileLoaded:     fileLoaded,
+				FileTotal:      item.Size,
+				LoadedBytes:    loadedBytes + fileLoaded,
+				TotalBytes:     totalBytes,
+				CompletedFiles: completedFiles,
+				TotalFiles:     len(files),
+				DirectoryCount: len(directories),
+				Message:        "正在上传远程文件",
+			})
+		})
+		written, uploadErr := uploadToPathWithProgress(sftpClient, remotePath, source, throttledReport)
 		closeErr := source.Close()
 		if uploadErr != nil {
 			return UploadBatchResult{}, uploadErr
@@ -202,9 +266,21 @@ func UploadFiles(conn model.Connection, remoteDir string, files []UploadItem, di
 			return UploadBatchResult{}, fmt.Errorf("close upload source %s: %w", item.FileName, closeErr)
 		}
 
+		throttledReport(written, true)
+		loadedBytes += written
+		completedFiles++
 		result.Files = append(result.Files, UploadResult{RemotePath: remotePath, Size: written})
 		result.TotalSize += written
 	}
+	reportUploadProgress(report, UploadProgressEvent{
+		Stage:          "done",
+		LoadedBytes:    result.TotalSize,
+		TotalBytes:     totalBytes,
+		CompletedFiles: completedFiles,
+		TotalFiles:     len(files),
+		DirectoryCount: len(directories),
+		Message:        "上传完成",
+	})
 
 	return result, nil
 }
@@ -810,18 +886,75 @@ func cleanRelativePath(value string, fallbackName string) (string, error) {
 }
 
 func uploadToPath(client *sftp.Client, remotePath string, source io.Reader) (int64, error) {
+	return uploadToPathWithProgress(client, remotePath, source, nil)
+}
+
+func uploadToPathWithProgress(client *sftp.Client, remotePath string, source io.Reader, progress func(int64, bool)) (int64, error) {
 	dst, err := client.Create(remotePath)
 	if err != nil {
 		return 0, fmt.Errorf("create remote file %s: %w", remotePath, err)
 	}
 	defer dst.Close()
 
-	written, err := io.Copy(dst, source)
+	writer := io.Writer(dst)
+	if progress != nil {
+		writer = &uploadProgressWriter{
+			writer:   dst,
+			progress: progress,
+		}
+	}
+	written, err := io.Copy(writer, source)
 	if err != nil {
 		return 0, fmt.Errorf("upload copy to %s: %w", remotePath, err)
 	}
 
 	return written, nil
+}
+
+type uploadProgressWriter struct {
+	writer   io.Writer
+	written  int64
+	progress func(int64, bool)
+}
+
+func (w *uploadProgressWriter) Write(p []byte) (int, error) {
+	n, err := w.writer.Write(p)
+	if n > 0 {
+		w.written += int64(n)
+		w.progress(w.written, false)
+	}
+	return n, err
+}
+
+func uploadTotalSize(files []UploadItem) int64 {
+	total := int64(0)
+	for _, item := range files {
+		if item.Size > 0 {
+			total += item.Size
+		}
+	}
+	return total
+}
+
+func reportUploadProgress(report UploadProgressReporter, event UploadProgressEvent) {
+	if report != nil {
+		report(event)
+	}
+}
+
+func newUploadProgressThrottle(report func(int64, bool)) func(int64, bool) {
+	var last time.Time
+	return func(fileLoaded int64, force bool) {
+		if report == nil {
+			return
+		}
+		now := time.Now()
+		if !force && !last.IsZero() && now.Sub(last) < 180*time.Millisecond {
+			return
+		}
+		last = now
+		report(fileLoaded, force)
+	}
 }
 
 func addZipFile(client *sftp.Client, archive *zip.Writer, remotePath string, zipPath string, info os.FileInfo) error {

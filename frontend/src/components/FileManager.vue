@@ -1,11 +1,23 @@
 <template>
-  <div class="file-manager-shell" @click="hideContextMenu" @contextmenu.prevent.stop="openBlankContextMenu($event)">
+  <div class="file-manager-shell" @click="onShellClick" @contextmenu.prevent.stop="openBlankContextMenu($event)">
     <div class="file-path-row">
+      <button
+        ref="pathHistoryButton"
+        class="path-history-button"
+        type="button"
+        title="路径历史"
+        :disabled="!connectionId || pathHistory.length === 0"
+        @click.stop="togglePathHistory"
+      >
+        ◷
+      </button>
       <input
         class="path-input"
-        :value="currentPath"
+        :value="pathDraft"
         :disabled="!connectionId || loading"
-        @change="onPathChange"
+        @input="onPathInput"
+        @change="commitPathDraft"
+        @keydown.tab.prevent.stop="completePathDraft"
         @click.stop
       />
       <span class="hint">{{ statusText }}</span>
@@ -14,10 +26,22 @@
     <input ref="fileInput" class="hidden-file-input" type="file" multiple @change="onFilePickerUpload" />
     <input ref="folderInput" class="hidden-file-input" type="file" multiple webkitdirectory directory @change="onFolderPickerUpload" />
 
-    <div class="file-error">{{ errorMessage || '\u00A0' }}</div>
+    <div v-if="errorMessage" class="file-error">{{ errorMessage }}</div>
+
+    <button
+      v-if="uploadProgress.visible && !uploadProgress.expanded"
+      class="upload-progress-chip"
+      :class="{ done: uploadProgress.status === 'done', error: uploadProgress.status === 'error' }"
+      type="button"
+      @click.stop="expandUploadPanel"
+      @contextmenu.prevent.stop
+    >
+      <strong>{{ uploadTitle }}</strong>
+      <span>{{ uploadPercent }}%</span>
+    </button>
 
     <div
-      v-if="uploadProgress.visible"
+      v-if="uploadProgress.visible && uploadProgress.expanded"
       class="upload-progress-panel"
       :class="{ done: uploadProgress.status === 'done', error: uploadProgress.status === 'error' }"
       @click.stop
@@ -65,6 +89,7 @@
           v-for="node in treeNodes"
           :key="node.path"
           class="path-node-row"
+          :class="{ active: node.path === currentPath, opened: node.opened }"
           :style="{ paddingLeft: `${node.depth * 14 + 8}px` }"
         >
           <button
@@ -147,6 +172,30 @@
     <div v-else class="empty-tip">连接后可浏览远程文件</div>
 
     <Teleport to="body">
+      <div
+        v-if="pathHistoryOpen"
+        class="path-history-popover"
+        :style="pathHistoryStyle"
+        @click.stop
+        @contextmenu.prevent.stop
+      >
+        <div class="path-history-head">
+          <strong>路径历史</strong>
+          <span>{{ pathHistory.length }} 项</span>
+        </div>
+        <div class="path-history-list">
+          <button
+            v-for="itemPath in pathHistory"
+            :key="itemPath"
+            type="button"
+            :class="{ active: itemPath === currentPath }"
+            @click="openHistoryPath(itemPath)"
+          >
+            {{ itemPath }}
+          </button>
+        </div>
+      </div>
+
       <div
         v-for="editorWindow in editors"
         :key="editorWindow.id"
@@ -306,6 +355,7 @@ const props = defineProps({
 
 const entries = ref([]);
 const currentPath = ref(initialPathForMode(props.workMode));
+const pathDraft = ref(currentPath.value);
 const loading = ref(false);
 const refreshingCached = ref(false);
 const uploading = ref(false);
@@ -317,10 +367,14 @@ const lastSelectedIndex = ref(-1);
 const clipboard = ref(readClipboard());
 const fileInput = ref(null);
 const folderInput = ref(null);
+const pathHistoryButton = ref(null);
 const pendingUploadPath = ref('');
+const pathHistory = ref([]);
+const pathHistoryOpen = ref(false);
 const columnWidths = reactive(loadColumnWidths());
 const uploadProgress = reactive({
   visible: false,
+  expanded: false,
   status: 'idle',
   targetPath: '',
   files: [],
@@ -351,6 +405,11 @@ const contextMenu = reactive({
   targetPath: '',
   targetKind: 'blank',
 });
+const pathHistoryPanel = reactive({
+  x: 0,
+  y: 0,
+  width: 320,
+});
 
 watch(
   () => [props.connectionId, props.workMode],
@@ -368,6 +427,13 @@ watch(
     await refresh(startPath);
   },
   { immediate: true },
+);
+
+watch(
+  currentPath,
+  (value) => {
+    pathDraft.value = value;
+  },
 );
 
 const orderedEntries = computed(() =>
@@ -409,6 +475,11 @@ const statusText = computed(() => {
 });
 
 const breadcrumbs = computed(() => buildBreadcrumbs(currentPath.value));
+const pathHistoryStyle = computed(() => ({
+  left: `${pathHistoryPanel.x}px`,
+  top: `${pathHistoryPanel.y}px`,
+  width: `${pathHistoryPanel.width}px`,
+}));
 const uploadPercent = computed(() => {
   if (uploadProgress.status === 'done') {
     return 100;
@@ -429,7 +500,7 @@ const uploadTitle = computed(() => {
 });
 const uploadDetail = computed(() => {
   if (uploadProgress.status === 'done') {
-    return '已完成，稍后自动关闭';
+    return '已完成，稍后自动折叠';
   }
   if (uploadProgress.status === 'error') {
     return '请检查连接或远程目录权限';
@@ -514,6 +585,7 @@ async function refresh(targetPath = currentPath.value || initialPathForMode(prop
 function applyDirectoryListing(resolvedPath, nextEntries, requestedPath = resolvedPath) {
   currentPath.value = resolvedPath;
   entries.value = cloneEntries(nextEntries);
+  rememberPathHistory(resolvedPath);
 
   rememberPath(ROOT_PATH);
   rememberPath(HOME_PATH);
@@ -533,6 +605,8 @@ function applyDirectoryListing(resolvedPath, nextEntries, requestedPath = resolv
 
 function resetPathState(startPath = initialPathForMode(props.workMode)) {
   pathMeta.value = initialPathMeta(startPath);
+  pathHistory.value = [];
+  pathHistoryOpen.value = false;
 }
 
 function initialPathForMode(workMode) {
@@ -630,6 +704,49 @@ function rememberParentChain(itemPath) {
   }
 }
 
+function rememberPathHistory(itemPath) {
+  const normalized = normalizePath(itemPath);
+  if (!normalized) {
+    return;
+  }
+  pathHistory.value = [
+    normalized,
+    ...pathHistory.value.filter((existing) => existing !== normalized),
+  ].slice(0, 25);
+}
+
+function togglePathHistory() {
+  if (!props.connectionId || pathHistory.value.length === 0) {
+    pathHistoryOpen.value = false;
+    return;
+  }
+  if (pathHistoryOpen.value) {
+    pathHistoryOpen.value = false;
+    return;
+  }
+  positionPathHistoryPanel();
+  pathHistoryOpen.value = true;
+}
+
+function positionPathHistoryPanel() {
+  const button = pathHistoryButton.value;
+  if (!button) {
+    return;
+  }
+  const rect = button.getBoundingClientRect();
+  const width = Math.min(420, Math.max(300, window.innerWidth - 24));
+  const height = Math.min(260, Math.max(120, pathHistory.value.length * 32 + 42));
+  pathHistoryPanel.x = Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - width - 8));
+  pathHistoryPanel.y = Math.max(8, rect.top - height - 8);
+  pathHistoryPanel.width = width;
+}
+
+function openHistoryPath(itemPath) {
+  pathHistoryOpen.value = false;
+  clearSelection();
+  refresh(itemPath);
+}
+
 function togglePathNode(itemPath) {
   const next = new Map(pathMeta.value);
   const existing = next.get(itemPath) || { opened: false, collapsed: false };
@@ -641,6 +758,7 @@ function openDir(itemPath) {
   if (loading.value) {
     return;
   }
+  pathHistoryOpen.value = false;
   clearSelection();
   refresh(itemPath);
 }
@@ -653,14 +771,65 @@ function openEntry(entry) {
   runFileOpenAction(DEFAULT_FILE_OPEN_ACTION, entry);
 }
 
-function onPathChange(event) {
-  const value = event.target.value?.trim();
+function onPathInput(event) {
+  pathDraft.value = event.target.value || '';
+}
+
+function commitPathDraft(event) {
+  const value = pathDraft.value.trim();
   if (!value) {
-    event.target.value = currentPath.value;
+    pathDraft.value = currentPath.value;
     return;
   }
+  pathHistoryOpen.value = false;
   clearSelection();
   refresh(value);
+}
+
+function completePathDraft() {
+  if (!props.connectionId) {
+    return;
+  }
+  const prefix = normalizePath(pathDraft.value);
+  if (!prefix) {
+    return;
+  }
+  const matches = pathCompletionMatches(prefix);
+  if (matches.length === 1) {
+    pathDraft.value = matches[0];
+  }
+}
+
+function pathCompletionMatches(prefix) {
+  const candidates = new Set([
+    ROOT_PATH,
+    HOME_PATH,
+    ...Object.values(WORK_MODE_START_PATHS),
+    ...pathHistory.value,
+    ...Array.from(pathMeta.value.keys()),
+    ...entries.value.filter((entry) => entry.isDir).map((entry) => entry.path),
+  ]);
+  const matches = new Set();
+  for (const candidate of candidates) {
+    const normalized = normalizePath(candidate);
+    const match = completionTarget(prefix, normalized);
+    if (match) {
+      matches.add(match);
+    }
+  }
+  return Array.from(matches).sort(comparePaths);
+}
+
+function completionTarget(prefix, candidate) {
+  if (!candidate || candidate === prefix || !candidate.startsWith(prefix)) {
+    return '';
+  }
+  const remaining = candidate.slice(prefix.length);
+  const slashIndex = remaining.indexOf('/');
+  if (slashIndex === -1) {
+    return candidate;
+  }
+  return candidate.slice(0, prefix.length + slashIndex);
 }
 
 function chooseFiles(targetPath = contextTargetDir.value) {
@@ -1190,6 +1359,12 @@ function onPaneClick(event) {
   hideContextMenu();
 }
 
+function onShellClick() {
+  hideContextMenu();
+  collapseUploadPanel();
+  pathHistoryOpen.value = false;
+}
+
 function openEntryContextMenu(event, entry, index) {
   if (!selectedPaths.value.has(entry.path)) {
     selectedPaths.value = new Set([entry.path]);
@@ -1225,14 +1400,18 @@ function hideContextMenu() {
 }
 
 function onGlobalPointerDown(event) {
-  if (!contextMenu.visible) {
-    return;
-  }
   const target = event.target;
-  if (target instanceof Element && target.closest('.file-context-menu')) {
-    return;
+  if (pathHistoryOpen.value && target instanceof Element) {
+    if (!target.closest('.path-history-popover') && !target.closest('.path-history-button')) {
+      pathHistoryOpen.value = false;
+    }
   }
-  hideContextMenu();
+  if (contextMenu.visible) {
+    if (target instanceof Element && target.closest('.file-context-menu')) {
+      return;
+    }
+    hideContextMenu();
+  }
 }
 
 async function refreshFromMenu() {
@@ -1480,6 +1659,7 @@ function startUploadProgress(items, directories, targetPath) {
     loaded: 0,
   }));
   uploadProgress.visible = true;
+  uploadProgress.expanded = true;
   uploadProgress.status = 'uploading';
   uploadProgress.targetPath = targetPath;
   uploadProgress.files = files;
@@ -1496,18 +1676,13 @@ function onUploadProgress(progress) {
     return;
   }
 
-  const loaded = Number(progress?.loaded) || 0;
-  const total = Number(progress?.total) || 0;
-  let ratio = 0;
-  if (progress?.lengthComputable && total > 0) {
-    ratio = loaded / total;
-  } else if (uploadProgress.totalBytes > 0) {
-    ratio = loaded / uploadProgress.totalBytes;
+  const loaded = Number(progress?.loadedBytes ?? progress?.loaded) || 0;
+  const total = Number(progress?.totalBytes ?? progress?.total) || 0;
+  if (total > uploadProgress.totalBytes) {
+    uploadProgress.totalBytes = total;
   }
-  ratio = Math.min(1, Math.max(0, ratio));
-
-  const loadedBytes = uploadProgress.totalBytes > 0 ? Math.round(uploadProgress.totalBytes * ratio) : loaded;
-  uploadProgress.loadedBytes = Math.min(uploadProgress.totalBytes || loadedBytes, loadedBytes);
+  const cappedLoaded = uploadProgress.totalBytes > 0 ? Math.min(uploadProgress.totalBytes, loaded) : loaded;
+  uploadProgress.loadedBytes = Math.max(uploadProgress.loadedBytes, cappedLoaded);
   distributeUploadLoaded(uploadProgress.loadedBytes);
 
   const elapsedSeconds = Math.max((Date.now() - uploadProgress.startedAt) / 1000, 0.1);
@@ -1532,13 +1707,14 @@ function markUploadComplete() {
 
 function markUploadError(message) {
   uploadProgress.status = 'error';
+  uploadProgress.expanded = true;
   uploadProgress.message = message || '上传失败';
 }
 
 function scheduleUploadPanelClose() {
   clearUploadCloseTimer();
   uploadCloseTimer = window.setTimeout(() => {
-    uploadProgress.visible = false;
+    collapseUploadPanel();
     uploadCloseTimer = null;
   }, UPLOAD_CLOSE_DELAY_MS);
 }
@@ -1547,6 +1723,19 @@ function clearUploadCloseTimer() {
   if (uploadCloseTimer) {
     window.clearTimeout(uploadCloseTimer);
     uploadCloseTimer = null;
+  }
+}
+
+function collapseUploadPanel() {
+  if (uploadProgress.visible) {
+    uploadProgress.expanded = false;
+  }
+}
+
+function expandUploadPanel() {
+  if (uploadProgress.visible) {
+    clearUploadCloseTimer();
+    uploadProgress.expanded = true;
   }
 }
 
