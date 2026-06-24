@@ -1062,6 +1062,248 @@ body,
   font-size: 12px;
 }
 
+.remote-editor-window {
+  position: fixed;
+  top: 86px;
+  left: 50%;
+  z-index: 900;
+  width: min(980px, calc(100vw - 64px));
+  height: min(660px, calc(100vh - 126px));
+  transform: translateX(-50%);
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  resize: both;
+  overflow: hidden;
+  border: 1px solid rgba(146, 202, 255, 0.28);
+  border-radius: 8px;
+  background: rgba(6, 16, 26, 0.98);
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.34);
+}
+
+.remote-editor-head,
+.remote-editor-foot {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border-bottom: 1px solid rgba(146, 202, 255, 0.16);
+  background: rgba(8, 20, 31, 0.96);
+}
+
+.remote-editor-foot {
+  border-top: 1px solid rgba(146, 202, 255, 0.16);
+  border-bottom: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.remote-editor-title {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.remote-editor-title strong {
+  min-width: 0;
+  color: var(--text);
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remote-editor-title span,
+.remote-editor-error {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remote-editor-error {
+  color: var(--danger);
+}
+
+.remote-editor-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.remote-editor-textarea {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  resize: none;
+  border: none;
+  outline: none;
+  padding: 12px;
+  color: #e9f5ff;
+  background: rgba(3, 10, 20, 0.96);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.remote-editor-textarea:disabled {
+  opacity: 0.72;
+}
+
+.editor-close-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(2, 8, 14, 0.72);
+}
+
+.editor-close-dialog {
+  width: min(520px, 100%);
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(146, 202, 255, 0.28);
+  border-radius: 8px;
+  background: rgba(8, 20, 31, 0.98);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.38);
+}
+
+.editor-close-dialog strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.editor-close-dialog span {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-close-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(2, 8, 14, 0.62);
+}
+
+.app-dialog {
+  width: min(560px, 100%);
+  max-height: min(720px, calc(100vh - 48px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid rgba(146, 202, 255, 0.28);
+  border-radius: 8px;
+  background: rgba(8, 20, 31, 0.98);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+}
+
+.dialog-head {
+  min-width: 0;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid rgba(146, 202, 255, 0.16);
+}
+
+.dialog-head div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.dialog-head strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.dialog-head span,
+.dialog-body {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.dialog-close {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(146, 202, 255, 0.2);
+  border-radius: 7px;
+  color: var(--muted);
+  background: rgba(10, 24, 37, 0.72);
+  cursor: pointer;
+}
+
+.dialog-close:hover:not(:disabled) {
+  color: var(--text);
+  border-color: rgba(100, 233, 186, 0.45);
+}
+
+.dialog-close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dialog-body {
+  min-height: 0;
+  padding: 14px;
+  overflow: auto;
+  line-height: 1.6;
+}
+
+.dialog-body p {
+  margin: 0;
+}
+
+.dialog-actions {
+  padding: 10px 14px 12px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid rgba(146, 202, 255, 0.16);
+}
+
+.release-notes {
+  margin: 12px 0 0;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+
+.dialog-error {
+  margin-top: 10px !important;
+  color: var(--danger);
+}
+
 .file-split {
   min-height: 0;
   flex: 1;
@@ -1347,7 +1589,7 @@ body,
 
 .context-menu {
   position: fixed;
-  z-index: 20;
+  z-index: 1000;
   width: 220px;
   padding: 6px;
   border: 1px solid rgba(146, 202, 255, 0.28);

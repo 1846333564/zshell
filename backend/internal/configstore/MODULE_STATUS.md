@@ -1,19 +1,19 @@
-# Config Store Module Status
+# 配置存储模块状态
 
-## Scope
+## 范围
 
-Windows-user encrypted saved connection configuration.
+当前 Windows 用户下加密保存连接配置和 UI 偏好。
 
-## Important Files
+## 重要文件
 
 - `store.go`
 - `dpapi_windows.go`
 - `dpapi_other.go`
 
-## Current State
+## 当前状态
 
-Saved connections and UI preferences are written to `%AppData%\zShell\connections.dpapi` through `os.UserConfigDir()` and encrypted/decrypted with Windows DPAPI for the current user. Non-Windows builds return an explicit unsupported error.
+保存连接和 UI 偏好会通过 `os.UserConfigDir()` 写入 `%AppData%\zShell\connections.dpapi`，并用 Windows DPAPI 针对当前用户加密/解密。非 Windows 构建会返回明确的不支持错误。
 
-## Known Work
+## 已知工作
 
-Add unit coverage around load/save error handling with injectable paths or crypto wrappers if this module grows beyond the current Windows desktop target.
+如果该模块继续扩大，需要围绕加载/保存错误处理增加单元测试，并考虑注入路径或加密包装以便测试。

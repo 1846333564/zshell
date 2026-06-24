@@ -5,12 +5,34 @@ $frontendDir = Join-Path $root 'frontend'
 $backendDir = Join-Path $root 'backend'
 $frontendDist = Join-Path $frontendDir 'dist'
 $embeddedApp = Join-Path $backendDir 'internal\web\app'
-$outputExe = 'D:\zshell.exe'
+$versionPath = Join-Path $root 'VERSION'
+$version = (Get-Content -LiteralPath $versionPath -Raw).Trim()
+$releaseDir = Join-Path $root 'release'
+$outputExe = Join-Path $releaseDir "zshell.$version.exe"
+
+if ($version -notmatch '^\d+\.\d+\.\d+$') {
+  throw "Invalid VERSION value: $version"
+}
+
+function Invoke-Native {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string] $Description,
+    [Parameter(Mandatory = $true)]
+    [scriptblock] $Command
+  )
+
+  $global:LASTEXITCODE = 0
+  & $Command
+  if ($LASTEXITCODE -ne 0) {
+    throw "$Description failed with exit code $LASTEXITCODE"
+  }
+}
 
 Push-Location $frontendDir
 try {
-  npm ci
-  npm run build
+  Invoke-Native 'npm ci' { npm ci }
+  Invoke-Native 'npm run build' { npm run build }
 } finally {
   Pop-Location
 }
@@ -27,17 +49,22 @@ Copy-Item -Path (Join-Path $frontendDist '*') -Destination $embeddedApp -Recurse
 
 Push-Location $backendDir
 try {
-  go test ./...
+  Invoke-Native 'go test ./...' { go test ./... }
   $wails = Join-Path $env:USERPROFILE 'go\bin\wails.exe'
   if (!(Test-Path -LiteralPath $wails)) {
-    go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+    Invoke-Native 'go install Wails CLI' { go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0 }
   }
-  & $wails build -clean -s -skipbindings -o zshell.exe -webview2 embed -ldflags '-s -w'
+  $ldflags = "-s -w -X zshell/backend/internal/appinfo.Version=$version"
+  Invoke-Native 'wails build' { & $wails build -clean -s -skipbindings -o zshell.exe -webview2 embed -ldflags $ldflags }
   $builtExe = Join-Path $backendDir 'build\bin\zshell.exe'
   if (!(Test-Path -LiteralPath $builtExe)) {
     throw "Wails build did not produce $builtExe"
   }
-  $runningOutput = Get-Process | Where-Object { $_.Path -eq $outputExe }
+  New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+  $releaseRoot = [System.IO.Path]::GetFullPath($releaseDir).TrimEnd('\') + '\'
+  $runningOutput = Get-Process | Where-Object {
+    $_.Path -and [System.IO.Path]::GetFullPath($_.Path).StartsWith($releaseRoot, [System.StringComparison]::OrdinalIgnoreCase)
+  }
   if ($runningOutput) {
     $runningOutput | Stop-Process -Force
     foreach ($process in $runningOutput) {
@@ -45,6 +72,7 @@ try {
     }
     Start-Sleep -Milliseconds 300
   }
+  Get-ChildItem -LiteralPath $releaseDir -Filter '*.exe' -File -ErrorAction SilentlyContinue | Remove-Item -Force
   Copy-Item -LiteralPath $builtExe -Destination $outputExe -Force
 } finally {
   Pop-Location

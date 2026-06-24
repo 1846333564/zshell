@@ -1,10 +1,10 @@
-# Frontend Components Module Status
+# 前端组件模块状态
 
-## Scope
+## 范围
 
-Vue components for connection forms, monitor panel, terminal tabs/panels, and file manager.
+连接表单、监控面板、终端标签/面板和文件管理器等 Vue 组件。
 
-## Important Files
+## 重要文件
 
 - `ConnectionForm.vue`
 - `MonitorPanel.vue`
@@ -12,10 +12,12 @@ Vue components for connection forms, monitor panel, terminal tabs/panels, and fi
 - `TerminalPanel.vue`
 - `FileManager.vue`
 
-## Current State
+## 当前状态
 
-Terminal and monitor panels are integrated. `ConnectionForm.vue` supports create/edit modes. `TerminalPanel.vue` handles terminal-focused font sizing, terminal clipboard shortcuts, and a terminal context menu for copy/paste/clear/reconnect. `FileManager.vue` uses a top path input, a collapsible path navigator with fixed `/` root visibility, resolved home paths such as `/root`, basename-only tree labels, color-only opened markers, right-side centered fold buttons, full context-menu file actions, drag/drop upload, picker upload, compact upload progress with total/per-file/speed details, and resizable file columns.
+终端和监控面板已经集成。`ConnectionForm.vue` 支持新建和编辑模式。`TerminalPanel.vue` 处理终端聚焦字体缩放、终端剪贴板快捷键，以及复制、粘贴、清屏、重连的视口定位右键菜单。
 
-## Known Work
+`FileManager.vue` 提供顶部路径输入、可折叠路径导航、固定 `/` 根路径可见、解析后的 home 路径如 `/root`、树节点 basename 展示、打开状态颜色标记、右侧居中折叠按钮、视口定位右键文件操作、点击外部关闭右键菜单、拖放上传、选择器上传、紧凑上传进度、可调整文件列宽和独立浮动在线文本编辑窗口。
 
-Keep file actions in context menus rather than returning fixed toolbar buttons. Verify context-menu behavior against real files and folders when a server is available.
+## 已知工作
+
+文件动作继续放在右键菜单中，不回退为固定工具栏按钮。真实服务器可用时，需要验证文件/目录右键、在线编辑保存和权限错误表现。

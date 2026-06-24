@@ -1,35 +1,38 @@
-# zShell - Step 5
+# zShell - 第 5 步
 
-## What is implemented
+## 已实现内容
 
-### Backend
+### 后端
 
-- SFTP service over SSH
-- List remote directory endpoint
-- Upload file endpoint
-- Download file endpoint
+- 基于 SSH 的 SFTP 服务。
+- 远程目录列表接口。
+- 文件上传接口。
+- 文件下载接口。
 
-### Frontend
+### 前端
 
-- Basic remote file manager panel
-- Directory navigation
-- File upload to current directory
-- File download from remote entries
+- 基础远程文件管理器面板。
+- 目录导航。
+- 上传文件到当前目录。
+- 从远程条目下载文件。
 
-## Backend APIs
+## 后端 API
 
-1. List directory
+1. 列出目录
 
-- POST /api/sftp/list
-- Body:
+- `POST /api/sftp/list`
+- 请求体：
 
+```json
 {
   "connectionId": "conn-xxxx",
   "path": "/home/root"
 }
+```
 
-- Response:
+- 响应：
 
+```json
 {
   "path": "/home/root",
   "entries": [
@@ -43,46 +46,45 @@
     }
   ]
 }
+```
 
-2. Upload file
+2. 上传文件
 
-- POST /api/sftp/upload
-- Content-Type: multipart/form-data
-- Fields:
-  - connectionId
-  - path
-  - file
+- `POST /api/sftp/upload`
+- `Content-Type: multipart/form-data`
+- 字段：
+  - `connectionId`
+  - `path`
+  - `file`
 
-3. Download file
+3. 下载文件
 
-- GET /api/sftp/download?connectionId=conn-xxxx&path=/home/root/demo.txt
+- `GET /api/sftp/download?connectionId=conn-xxxx&path=/home/root/demo.txt`
 
-## Run
+## 运行
 
-1. Start backend
+1. 启动后端：
 
+```powershell
 cd backend
 go run ./cmd/zshell
+```
 
-2. Start frontend
+2. 启动前端：
 
+```powershell
 cd ../frontend
 npm run dev
+```
 
-3. Open
+3. 打开：
 
+```text
 http://localhost:5173
+```
 
-## Manual verification checklist
+## 手工验证清单
 
-1. Connect to a valid SSH server from the left panel.
-2. Confirm terminal still works (pwd, ls, top).
-3. In 文件管理 panel, click 刷新 and ensure entries are loaded.
-4. Enter a directory and verify list changes.
-5. Upload a local file and refresh to confirm presence.
-6. Download a remote file and verify local browser download.
-
-## Notes
-
-- The file manager is intentionally basic for MVP and avoids database/storage.
-- All operations are local client -> local Go backend -> remote SSH server.
+1. 从左侧面板连接有效 SSH 服务器。
+2. 确认终端仍正常工作，例如 `pwd`、`ls`、`top`。
+3. 在“文件管理”面板点击刷新，确认能加载远程目录条目。

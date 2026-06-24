@@ -1,18 +1,18 @@
-# Web Asset Module Status
+# Web 资源模块状态
 
-## Scope
+## 范围
 
-Embedded frontend asset serving and runtime backend base URL injection.
+嵌入前端资源服务，以及运行时后端基础地址注入。
 
-## Important Files
+## 重要文件
 
 - `server.go`
 - `app/.gitkeep`
 
-## Current State
+## 当前状态
 
-The Wails window loads Vue assets through `web.HandlerWithConfig`, which injects `window.__ZSHELL_BACKEND_BASE__` for HTTP and WebSocket calls.
+Wails 窗口通过 `web.HandlerWithConfig` 加载 Vue 资源，并注入 `window.__ZSHELL_BACKEND_BASE__`，供 HTTP 和 WebSocket 调用使用。
 
-## Known Work
+## 已知工作
 
-Do not serve terminal WebSocket through Wails asset server.
+不要通过 Wails 静态资源服务承载终端 WebSocket。

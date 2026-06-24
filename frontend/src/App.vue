@@ -12,7 +12,7 @@
             <button class="app-menu-button" type="button">zShell</button>
             <div class="app-menu-dropdown">
               <button type="button" @click="showConnectHome">连接首页</button>
-              <button type="button" disabled>关于 zShell</button>
+              <button type="button" @click="showAboutDialog">关于 zShell</button>
               <button type="button" @click="closeWindow">退出</button>
             </div>
           </div>
@@ -127,6 +127,62 @@
         </section>
       </section>
     </section>
+
+    <Teleport to="body">
+      <div v-if="aboutDialog.visible" class="modal-backdrop" @click.self="hideAboutDialog">
+        <section class="app-dialog about-dialog" @click.stop>
+          <header class="dialog-head">
+            <div>
+              <strong>关于 zShell</strong>
+              <span>版本 {{ appInfo.version || '0.0.1' }}</span>
+            </div>
+            <button type="button" class="dialog-close" @click="hideAboutDialog">×</button>
+          </header>
+
+          <div class="dialog-body">
+            <p>属于{{ appInfo.company || '重庆创翼科技有限公司' }}，开发者{{ appInfo.developer || 'zly' }}，{{ appInfo.channel || '暂时内测版' }}。</p>
+          </div>
+
+          <footer class="dialog-actions">
+            <button class="small-btn" type="button" :disabled="updateDialog.status === 'checking' || updateDialog.status === 'applying'" @click="checkUpdatesFromAbout">
+              检查更新
+            </button>
+            <button class="small-btn" type="button" @click="hideAboutDialog">关闭</button>
+          </footer>
+        </section>
+      </div>
+
+      <div v-if="updateDialog.visible" class="modal-backdrop" @click.self="closeUpdateDialog">
+        <section class="app-dialog update-dialog" @click.stop>
+          <header class="dialog-head">
+            <div>
+              <strong>{{ updateDialog.title }}</strong>
+              <span>{{ updateDialog.subtitle }}</span>
+            </div>
+            <button type="button" class="dialog-close" :disabled="updateDialog.status === 'applying'" @click="closeUpdateDialog">×</button>
+          </header>
+
+          <div class="dialog-body">
+            <p>{{ updateDialog.message }}</p>
+            <pre v-if="updateDialog.notes" class="release-notes">{{ updateDialog.notes }}</pre>
+            <p v-if="updateDialog.error" class="dialog-error">{{ updateDialog.error }}</p>
+          </div>
+
+          <footer class="dialog-actions">
+            <button
+              v-if="updateDialog.available"
+              class="small-btn"
+              type="button"
+              :disabled="updateDialog.status === 'applying'"
+              @click="confirmApplyUpdate"
+            >
+              确认更新
+            </button>
+            <button class="small-btn" type="button" :disabled="updateDialog.status === 'applying'" @click="closeUpdateDialog">关闭</button>
+          </footer>
+        </section>
+      </div>
+    </Teleport>
   </main>
 </template>
 
@@ -137,7 +193,10 @@ import FileManager from './components/FileManager.vue';
 import MonitorPanel from './components/MonitorPanel.vue';
 import TerminalTabs from './components/TerminalTabs.vue';
 import {
+  applyUpdate,
+  checkForUpdate,
   deleteConnectionConfig,
+  getAppInfo,
   getUIPreferences,
   listConnectionConfigs,
   saveConnectionConfig,
@@ -158,6 +217,9 @@ const draftConnection = ref(defaultConnectionDraft());
 const editingConnectionId = ref('');
 const sessions = ref([]);
 const activeSessionId = ref('');
+const appInfo = ref({});
+const aboutDialog = ref({ visible: false });
+const updateDialog = ref(defaultUpdateDialog());
 
 const activeSession = computed(() => sessions.value.find((item) => item.connectionId === activeSessionId.value) || null);
 
@@ -335,8 +397,125 @@ function authLabel(authMethod) {
   return authMethod === 'id_rsa' ? '~/.ssh/id_rsa' : '密码';
 }
 
+async function loadAppInfo() {
+  try {
+    const result = await getAppInfo();
+    appInfo.value = result.app || {};
+  } catch (error) {
+    console.warn('load app info failed', error);
+  }
+}
+
+function showAboutDialog() {
+  aboutDialog.value.visible = true;
+}
+
+function hideAboutDialog() {
+  aboutDialog.value.visible = false;
+}
+
+function defaultUpdateDialog() {
+  return {
+    visible: false,
+    status: 'idle',
+    available: false,
+    title: '检查更新',
+    subtitle: '',
+    message: '',
+    notes: '',
+    error: '',
+  };
+}
+
+async function checkUpdatesFromAbout() {
+  updateDialog.value = {
+    ...defaultUpdateDialog(),
+    visible: true,
+    status: 'checking',
+    title: '正在检查更新',
+    subtitle: `当前版本 ${appInfo.value.version || '0.0.1'}`,
+    message: '正在连接 GitHub Release...',
+  };
+
+  try {
+    const result = await checkForUpdate();
+    const update = result.update || {};
+    const currentVersion = update.currentVersion || appInfo.value.version || '0.0.1';
+    const latestVersion = update.latestVersion || currentVersion;
+    if (update.available) {
+      updateDialog.value = {
+        visible: true,
+        status: 'ready',
+        available: true,
+        title: '发现新版本',
+        subtitle: `${currentVersion} -> ${latestVersion}`,
+        message: '是否确认更新？确认后会下载新版本、替换当前程序并自动重启。',
+        notes: update.notes || '',
+        error: '',
+      };
+      return;
+    }
+
+    updateDialog.value = {
+      visible: true,
+      status: 'done',
+      available: false,
+      title: '已经是最新版本',
+      subtitle: `当前版本 ${currentVersion}`,
+      message: '没有发现可用更新。',
+      notes: '',
+      error: '',
+    };
+  } catch (error) {
+    updateDialog.value = {
+      ...defaultUpdateDialog(),
+      visible: true,
+      status: 'error',
+      title: '检查更新失败',
+      subtitle: `当前版本 ${appInfo.value.version || '0.0.1'}`,
+      message: '无法完成更新检查。',
+      error: error instanceof Error ? error.message : '检查更新失败',
+    };
+  }
+}
+
+async function confirmApplyUpdate() {
+  updateDialog.value = {
+    ...updateDialog.value,
+    status: 'applying',
+    message: '正在下载并应用更新，完成后应用会自动重启。',
+    error: '',
+  };
+
+  try {
+    await applyUpdate();
+    updateDialog.value = {
+      ...updateDialog.value,
+      status: 'applying',
+      available: false,
+      title: '正在重启',
+      message: '更新已准备完成，zShell 即将重启。',
+    };
+  } catch (error) {
+    updateDialog.value = {
+      ...updateDialog.value,
+      status: 'error',
+      error: error instanceof Error ? error.message : '更新失败',
+      message: '更新未完成。',
+    };
+  }
+}
+
+function closeUpdateDialog() {
+  if (updateDialog.value.status === 'applying') {
+    return;
+  }
+  updateDialog.value = defaultUpdateDialog();
+}
+
 onMounted(() => {
   loadSavedConnections();
+  loadAppInfo();
   applyUiScale();
   loadUIPreferences();
   window.addEventListener('keydown', handleGlobalKeydown, true);

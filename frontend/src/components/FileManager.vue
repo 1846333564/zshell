@@ -146,32 +146,83 @@
     </div>
     <div v-else class="empty-tip">连接后可浏览远程文件</div>
 
-    <div
-      v-if="contextMenu.visible"
-      class="context-menu file-context-menu"
-      :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
-      @click.stop
-      @contextmenu.prevent.stop
-    >
-      <button :disabled="!connectionId || loading" @click="refreshFromMenu">刷新</button>
+    <Teleport to="body">
+      <div v-if="editor.visible" class="remote-editor-window" @click.stop @contextmenu.prevent.stop>
+        <header class="remote-editor-head">
+          <div class="remote-editor-title">
+            <strong>{{ editorTitle }}</strong>
+            <span>{{ editor.path }}</span>
+          </div>
+          <div class="remote-editor-actions">
+            <span>{{ editorStatus }}</span>
+            <button class="small-btn" :disabled="!editorDirty || editor.loading || editor.saving" @click="saveEditor">保存</button>
+            <button class="small-btn" :disabled="editor.loading || editor.saving" @click="requestEditorClose">关闭</button>
+          </div>
+        </header>
 
-      <div class="context-menu-separator"></div>
-      <button v-if="contextEntry?.isDir" :disabled="loading" @click="openContextDirectory">打开</button>
-      <button v-if="contextEntry && !contextEntry.isDir" :disabled="loading" @click="downloadContextEntry">下载</button>
-      <button :disabled="!hasSelection || loading" @click="downloadSelectionFromMenu">下载选中</button>
+        <textarea
+          class="remote-editor-textarea"
+          v-model="editor.content"
+          :disabled="editor.loading || editor.saving"
+          :spellcheck="false"
+        ></textarea>
 
-      <div class="context-menu-separator"></div>
-      <button :disabled="!connectionId || uploading" @click="chooseFilesFromMenu">上传文件到此处...</button>
-      <button :disabled="!connectionId || uploading" @click="chooseFolderFromMenu">上传文件夹到此处...</button>
+        <footer class="remote-editor-foot">
+          <span>{{ editorMeta }}</span>
+          <span class="remote-editor-error">{{ editor.error || '\u00A0' }}</span>
+        </footer>
 
-      <div class="context-menu-separator"></div>
-      <button :disabled="!hasSelection" @click="copySelectionFromMenu">复制</button>
-      <button :disabled="!hasSelection" @click="cutSelectionFromMenu">剪切</button>
-      <button :disabled="!canPaste || loading" @click="pasteClipboardFromMenu">粘贴到此处</button>
+        <div v-if="editorClosePrompt.visible" class="editor-close-backdrop">
+          <section class="editor-close-dialog">
+            <strong>文件已修改</strong>
+            <span>{{ editor.path }}</span>
+            <div class="editor-close-actions">
+              <button class="small-btn" :disabled="editor.saving" @click="saveEditorFromPrompt">保存</button>
+              <button class="small-btn" :disabled="editor.saving" @click="saveAndCloseEditorFromPrompt">保存并关闭</button>
+              <button class="small-btn danger" :disabled="editor.saving" @click="discardEditorFromPrompt">不保存并关闭</button>
+              <button class="small-btn" :disabled="editor.saving" @click="cancelEditorClosePrompt">取消</button>
+            </div>
+          </section>
+        </div>
+      </div>
 
-      <div class="context-menu-separator"></div>
-      <button :disabled="!contextPath" @click="copyPathFromMenu">复制路径</button>
-    </div>
+      <div
+        v-if="contextMenu.visible"
+        class="context-menu file-context-menu"
+        :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+        @click.stop
+        @contextmenu.prevent.stop
+      >
+        <button :disabled="!connectionId || loading" @click="refreshFromMenu">刷新</button>
+
+        <div class="context-menu-separator"></div>
+        <button v-if="contextCanOpenDirectory" :disabled="loading" @click="openContextDirectory">打开</button>
+        <template v-if="contextEntry && !contextEntry.isDir">
+          <button
+            v-for="action in fileOpenActions"
+            :key="action.key"
+            :disabled="loading || editor.loading || editor.saving"
+            @click="runContextFileOpenAction(action.key)"
+          >
+            {{ action.label }}
+          </button>
+          <button :disabled="loading" @click="downloadContextEntry">下载</button>
+        </template>
+        <button :disabled="!hasSelection || loading" @click="downloadSelectionFromMenu">下载选中</button>
+
+        <div class="context-menu-separator"></div>
+        <button :disabled="!connectionId || uploading" @click="chooseFilesFromMenu">上传文件到此处...</button>
+        <button :disabled="!connectionId || uploading" @click="chooseFolderFromMenu">上传文件夹到此处...</button>
+
+        <div class="context-menu-separator"></div>
+        <button :disabled="!hasSelection" @click="copySelectionFromMenu">复制</button>
+        <button :disabled="!hasSelection" @click="cutSelectionFromMenu">剪切</button>
+        <button :disabled="!canPaste || loading" @click="pasteClipboardFromMenu">粘贴到此处</button>
+
+        <div class="context-menu-separator"></div>
+        <button :disabled="!contextPath" @click="copyPathFromMenu">复制路径</button>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -183,15 +234,19 @@ import {
   downloadRemoteFile,
   downloadRemoteItems,
   listRemoteFiles,
+  readRemoteTextFile,
+  saveRemoteTextFile,
   transferRemoteItems,
   uploadRemoteItems,
 } from '../services/apiClient';
+import { viewportContextMenuPosition } from '../utils/contextMenuPosition';
 
 const ROOT_PATH = '/';
 const HOME_PATH = '~';
 const CLIPBOARD_KEY = 'zshell.remote-file.clipboard.v1';
 const MIN_COLUMN_WIDTH = 70;
 const UPLOAD_CLOSE_DELAY_MS = 1200;
+const DEFAULT_FILE_OPEN_ACTION = 'textEdit';
 
 const columns = [
   { key: 'name', label: '名称', width: 280 },
@@ -200,6 +255,10 @@ const columns = [
   { key: 'modTime', label: '修改时间', width: 175 },
   { key: 'mode', label: '权限', width: 125 },
   { key: 'owner', label: '所属用户', width: 110 },
+];
+
+const fileOpenActions = [
+  { key: 'textEdit', label: '在线编辑' },
 ];
 
 const props = defineProps({
@@ -235,6 +294,23 @@ const uploadProgress = reactive({
   startedAt: 0,
   message: '',
 });
+const editor = reactive({
+  visible: false,
+  loading: false,
+  saving: false,
+  path: '',
+  name: '',
+  content: '',
+  originalContent: '',
+  size: 0,
+  modTime: '',
+  error: '',
+  message: '',
+});
+const editorClosePrompt = reactive({
+  visible: false,
+  afterClose: null,
+});
 const pathMeta = ref(
   new Map([
     [ROOT_PATH, { opened: false, collapsed: false }],
@@ -251,6 +327,7 @@ const contextMenu = reactive({
   y: 0,
   entry: null,
   targetPath: '',
+  targetKind: 'blank',
 });
 
 watch(
@@ -283,9 +360,34 @@ const selectedEntries = computed(() => orderedEntries.value.filter((entry) => se
 const hasSelection = computed(() => selectedEntries.value.length > 0);
 const canPaste = computed(() => Boolean(props.connectionId && clipboard.value?.items?.length));
 const contextEntry = computed(() => contextMenu.entry);
+const contextCanOpenDirectory = computed(() => Boolean(contextMenu.entry?.isDir || contextMenu.targetKind === 'directory'));
 const contextPath = computed(() => contextMenu.entry?.path || contextMenu.targetPath || currentPath.value || HOME_PATH);
 const contextTargetDir = computed(() => (contextMenu.entry?.isDir ? contextMenu.entry.path : contextMenu.targetPath || currentPath.value || HOME_PATH));
 const gridTemplateColumns = computed(() => columns.map((column) => `${columnWidths[column.key]}px`).join(' '));
+const editorDirty = computed(() => editor.visible && editor.content !== editor.originalContent);
+const editorTitle = computed(() => editor.name || displayPath(editor.path) || '远程文件');
+const editorStatus = computed(() => {
+  if (editor.loading) {
+    return '读取中...';
+  }
+  if (editor.saving) {
+    return '保存中...';
+  }
+  if (editorDirty.value) {
+    return '未保存';
+  }
+  return editor.message || '已保存';
+});
+const editorMeta = computed(() => {
+  if (!editor.visible) {
+    return '';
+  }
+  const parts = [formatSize(new Blob([editor.content]).size)];
+  if (editor.modTime) {
+    parts.push(formatTime(editor.modTime));
+  }
+  return parts.join(' · ');
+});
 
 const statusText = computed(() => {
   if (!props.connectionId) {
@@ -352,11 +454,13 @@ onMounted(() => {
   applyColumnWidths();
   window.addEventListener('storage', onStorage);
   window.addEventListener('keydown', onKeydown);
+  window.addEventListener('pointerdown', onGlobalPointerDown, true);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('storage', onStorage);
   window.removeEventListener('keydown', onKeydown);
+  window.removeEventListener('pointerdown', onGlobalPointerDown, true);
   clearUploadCloseTimer();
   stopColumnResize();
 });
@@ -451,7 +555,7 @@ function openEntry(entry) {
     openDir(entry.path);
     return;
   }
-  download(entry.path, entry.name);
+  runFileOpenAction(DEFAULT_FILE_OPEN_ACTION, entry);
 }
 
 function onPathChange(event) {
@@ -606,11 +710,162 @@ async function downloadContextEntry() {
 }
 
 function openContextDirectory() {
+  const targetPath = contextMenu.entry?.isDir ? contextMenu.entry.path : contextMenu.targetPath;
+  hideContextMenu();
+  if (targetPath) {
+    openDir(targetPath);
+  }
+}
+
+async function runContextFileOpenAction(actionKey) {
   const entry = contextMenu.entry;
   hideContextMenu();
-  if (entry?.isDir) {
-    openDir(entry.path);
+  if (!entry || entry.isDir) {
+    return;
   }
+  await runFileOpenAction(actionKey, entry);
+}
+
+async function runFileOpenAction(actionKey, entry) {
+  if (actionKey === 'textEdit') {
+    await openTextEditor(entry);
+  }
+}
+
+async function openTextEditor(entry) {
+  if (!props.connectionId || !entry || entry.isDir) {
+    return;
+  }
+
+  const openFile = async () => {
+    editor.visible = true;
+    editor.loading = true;
+    editor.saving = false;
+    editor.path = entry.path;
+    editor.name = entry.name;
+    editor.content = '';
+    editor.originalContent = '';
+    editor.size = Number(entry.size) || 0;
+    editor.modTime = entry.modTime || '';
+    editor.error = '';
+    editor.message = '';
+
+    try {
+      const result = await readRemoteTextFile(props.connectionId, entry.path);
+      const file = result.file || {};
+      const content = String(file.content ?? '');
+      editor.path = String(file.path || entry.path);
+      editor.name = String(file.name || entry.name || displayPath(editor.path));
+      editor.content = content;
+      editor.originalContent = content;
+      editor.size = Number(file.size) || content.length;
+      editor.modTime = String(file.modTime || entry.modTime || '');
+      editor.message = '已打开';
+    } catch (error) {
+      editor.error = error instanceof Error ? error.message : '打开文件失败';
+    } finally {
+      editor.loading = false;
+    }
+  };
+
+  if (editorDirty.value) {
+    requestEditorClose({ afterClose: openFile });
+    return;
+  }
+
+  await openFile();
+}
+
+async function saveEditor() {
+  if (!props.connectionId || !editor.visible || !editor.path || editor.loading || editor.saving) {
+    return false;
+  }
+
+  editor.saving = true;
+  editor.error = '';
+  editor.message = '';
+  const content = editor.content;
+
+  try {
+    const result = await saveRemoteTextFile(props.connectionId, editor.path, content);
+    const file = result.file || {};
+    editor.path = String(file.path || editor.path);
+    editor.name = String(file.name || editor.name || displayPath(editor.path));
+    editor.originalContent = content;
+    editor.size = Number(file.size) || new Blob([content]).size;
+    editor.modTime = String(file.modTime || '');
+    editor.message = '已保存';
+    await refresh(currentPath.value || HOME_PATH);
+    return true;
+  } catch (error) {
+    editor.error = error instanceof Error ? error.message : '保存失败';
+    return false;
+  } finally {
+    editor.saving = false;
+  }
+}
+
+function requestEditorClose(options = {}) {
+  const afterClose = typeof options.afterClose === 'function' ? options.afterClose : null;
+  if (!editor.visible || !editorDirty.value) {
+    closeEditorImmediately();
+    runAfterEditorClose(afterClose);
+    return;
+  }
+
+  editorClosePrompt.visible = true;
+  editorClosePrompt.afterClose = afterClose;
+}
+
+function closeEditorImmediately() {
+  editor.visible = false;
+  editor.loading = false;
+  editor.saving = false;
+  editor.path = '';
+  editor.name = '';
+  editor.content = '';
+  editor.originalContent = '';
+  editor.size = 0;
+  editor.modTime = '';
+  editor.error = '';
+  editor.message = '';
+  editorClosePrompt.visible = false;
+  editorClosePrompt.afterClose = null;
+}
+
+async function runAfterEditorClose(afterClose) {
+  if (typeof afterClose === 'function') {
+    await afterClose();
+  }
+}
+
+async function saveEditorFromPrompt() {
+  const saved = await saveEditor();
+  if (saved) {
+    editorClosePrompt.visible = false;
+    editorClosePrompt.afterClose = null;
+  }
+}
+
+async function saveAndCloseEditorFromPrompt() {
+  const afterClose = editorClosePrompt.afterClose;
+  const saved = await saveEditor();
+  if (!saved) {
+    return;
+  }
+  closeEditorImmediately();
+  await runAfterEditorClose(afterClose);
+}
+
+async function discardEditorFromPrompt() {
+  const afterClose = editorClosePrompt.afterClose;
+  closeEditorImmediately();
+  await runAfterEditorClose(afterClose);
+}
+
+function cancelEditorClosePrompt() {
+  editorClosePrompt.visible = false;
+  editorClosePrompt.afterClose = null;
 }
 
 function selectEntry(entry, index, event) {
@@ -670,27 +925,41 @@ function openEntryContextMenu(event, entry, index) {
   openContextMenu(event, {
     entry,
     targetPath: entry.isDir ? entry.path : currentPath.value || HOME_PATH,
+    targetKind: entry.isDir ? 'directory' : 'file',
   });
 }
 
 function openPathContextMenu(event, targetPath) {
-  openContextMenu(event, { targetPath });
+  openContextMenu(event, { targetPath, targetKind: 'directory' });
 }
 
 function openBlankContextMenu(event) {
-  openContextMenu(event, { targetPath: currentPath.value || HOME_PATH });
+  openContextMenu(event, { targetPath: currentPath.value || HOME_PATH, targetKind: 'blank' });
 }
 
 function openContextMenu(event, target = {}) {
+  const position = viewportContextMenuPosition(event, { width: 220, height: 430 });
   contextMenu.visible = true;
   contextMenu.entry = target.entry || null;
   contextMenu.targetPath = target.targetPath || currentPath.value || HOME_PATH;
-  contextMenu.x = Math.min(event.clientX, window.innerWidth - 230);
-  contextMenu.y = Math.min(event.clientY, window.innerHeight - 285);
+  contextMenu.targetKind = target.targetKind || 'blank';
+  contextMenu.x = position.x;
+  contextMenu.y = position.y;
 }
 
 function hideContextMenu() {
   contextMenu.visible = false;
+}
+
+function onGlobalPointerDown(event) {
+  if (!contextMenu.visible) {
+    return;
+  }
+  const target = event.target;
+  if (target instanceof Element && target.closest('.file-context-menu')) {
+    return;
+  }
+  hideContextMenu();
 }
 
 async function refreshFromMenu() {
@@ -995,7 +1264,17 @@ function onStorage(event) {
 }
 
 function onKeydown(event) {
+  const key = event.key.toLowerCase();
+  if ((event.ctrlKey || event.metaKey) && key === 's' && editor.visible) {
+    event.preventDefault();
+    saveEditor();
+    return;
+  }
   if (event.key === 'Escape') {
+    if (editorClosePrompt.visible) {
+      cancelEditorClosePrompt();
+      return;
+    }
     hideContextMenu();
   }
   if (event.key === 'F5' && props.connectionId) {

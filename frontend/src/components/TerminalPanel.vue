@@ -4,19 +4,21 @@
       <div ref="terminalMount" style="width: 100%; height: 100%"></div>
     </div>
 
-    <div
-      v-if="terminalMenu.visible"
-      class="context-menu terminal-context-menu"
-      :style="{ left: `${terminalMenu.x}px`, top: `${terminalMenu.y}px` }"
-      @click.stop
-      @contextmenu.prevent.stop
-    >
-      <button :disabled="!terminalMenu.hasSelection" @click="copyFromTerminalMenu">复制</button>
-      <button :disabled="!online" @click="pasteFromTerminalMenu">粘贴</button>
-      <div class="context-menu-separator"></div>
-      <button @click="clearFromTerminalMenu">清屏</button>
-      <button @click="reconnectFromTerminalMenu">重新连接</button>
-    </div>
+    <Teleport to="body">
+      <div
+        v-if="terminalMenu.visible"
+        class="context-menu terminal-context-menu"
+        :style="{ left: `${terminalMenu.x}px`, top: `${terminalMenu.y}px` }"
+        @click.stop
+        @contextmenu.prevent.stop
+      >
+        <button :disabled="!terminalMenu.hasSelection" @click="copyFromTerminalMenu">复制</button>
+        <button :disabled="!online" @click="pasteFromTerminalMenu">粘贴</button>
+        <div class="context-menu-separator"></div>
+        <button @click="clearFromTerminalMenu">清屏</button>
+        <button @click="reconnectFromTerminalMenu">重新连接</button>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -26,6 +28,7 @@ import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
 import { createTerminalClient } from '../services/wsClient';
+import { viewportContextMenuPosition } from '../utils/contextMenuPosition';
 
 const props = defineProps({
 	connectionId: {
@@ -269,9 +272,10 @@ function pasteClipboardToTerminal() {
 }
 
 function openTerminalMenu(event) {
+  const position = viewportContextMenuPosition(event, { width: 160, height: 176 });
   terminalMenu.visible = true;
-  terminalMenu.x = Math.min(event.clientX, window.innerWidth - 170);
-  terminalMenu.y = Math.min(event.clientY, window.innerHeight - 176);
+  terminalMenu.x = position.x;
+  terminalMenu.y = position.y;
   terminalMenu.hasSelection = Boolean(term?.getSelection());
 }
 

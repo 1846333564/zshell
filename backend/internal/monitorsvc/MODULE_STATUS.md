@@ -1,17 +1,17 @@
-# Monitor Service Module Status
+# 监控服务模块状态
 
-## Scope
+## 范围
 
-Linux host monitoring over SSH command snapshots.
+通过 SSH 命令快照采集 Linux 主机监控信息。
 
-## Important Files
+## 重要文件
 
 - `service.go`
 
-## Current State
+## 当前状态
 
-Collects hostname, CPU load percentage, memory percentage, root disk percentage, top 5 processes by memory/CPU, network byte rates, and filesystem partitions.
+采集 hostname、CPU 负载百分比、内存百分比、根分区磁盘百分比、按内存/CPU 排序的前 5 个进程、网络字节速率和文件系统分区。
 
-## Known Work
+## 已知工作
 
-Net speed is calculated between backend samples; the first sample normally reports zero rates.
+网络速度基于后端两次采样间隔计算，第一次采样通常显示 0。

@@ -1,17 +1,19 @@
-# HTTP API Module Status
+# HTTP API 模块状态
 
-## Scope
+## 范围
 
-HTTP routes for health, connection lifecycle, SSH actions, SFTP actions, cross-server transfer, archive download, and monitor snapshots.
+本地 HTTP 路由，覆盖健康检查、应用信息、更新检查与应用、连接生命周期、SSH、SFTP、远程文本编辑、跨服务器传输、归档下载和监控快照。
 
-## Important Files
+## 重要文件
 
 - `server.go`
 
-## Current State
+## 当前状态
 
-Routes are registered on a standard `http.ServeMux`. Connection config routes live at `/api/config/connections` with `GET`, `POST`, `PUT`, and `DELETE`; UI preferences live at `/api/config/preferences` with `GET` and `PUT`. Saved configs are backed by `configstore` and active runtime lookups use `store.MemoryStore`. Editing a password connection with an empty password keeps the previously saved password. SFTP upload supports multiple files/directories. Monitor snapshots are returned by `POST /api/monitor/snapshot`.
+路由注册在标准 `http.ServeMux` 上。连接配置路由位于 `/api/config/connections`，支持 `GET`、`POST`、`PUT` 和 `DELETE`；UI 偏好路由位于 `/api/config/preferences`，支持 `GET` 和 `PUT`。保存配置由 `configstore` 持久化，活动连接查询使用 `store.MemoryStore`。密码连接编辑时，如果密码为空，会保留旧密码。
 
-## Known Work
+SFTP 上传支持多文件和多目录；远程文本编辑使用 `/api/sftp/file/read` 和 `/api/sftp/file/write`；监控快照由 `POST /api/monitor/snapshot` 返回。应用信息由 `GET /api/app/info` 返回，更新检查和应用分别使用 `POST /api/update/check` 与 `POST /api/update/apply`。
 
-Add focused handler tests for config create/update/delete, especially password retention and config-store failures.
+## 已知工作
+
+配置增删改查仍需要更细的 handler 测试，尤其是密码保留和配置存储失败场景。更新接口需要在真实 GitHub Release 存在后做端到端验证。

@@ -1,18 +1,18 @@
-# Frontend Services Module Status
+# 前端服务模块状态
 
-## Scope
+## 范围
 
-Client wrappers for HTTP API, downloads, uploads, monitor snapshots, transfer, and terminal WebSocket.
+HTTP API、下载、上传、监控快照、跨服务器传输、更新接口和终端 WebSocket 的前端封装。
 
-## Important Files
+## 重要文件
 
 - `apiClient.js`
 - `wsClient.js`
 
-## Current State
+## 当前状态
 
-API and WebSocket calls use the injected backend base URL in Wails or relative paths during Vite development. `apiClient.js` includes saved connection config wrappers for list/create/update/delete, UI preference wrappers for persisted zoom, XHR-based SFTP upload with progress callbacks, archive download, direct download, and transfer wrappers used by the file context menu.
+API 和 WebSocket 调用在 Wails 中使用注入的后端基础地址，在 Vite 开发时使用相对路径。`apiClient.js` 包含保存连接配置的列表/创建/更新/删除封装、UI 缩放偏好封装、应用信息封装、检查更新和应用更新封装、带进度回调的 XHR SFTP 上传、归档下载、直接下载、远程文本读写，以及文件右键菜单使用的传输封装。
 
-## Known Work
+## 已知工作
 
-Keep browser storage out of saved connection credentials; only non-secret transient UI state should use local browser storage.
+保存连接凭据不能放回浏览器存储；浏览器本地存储只用于非敏感的临时 UI 状态。

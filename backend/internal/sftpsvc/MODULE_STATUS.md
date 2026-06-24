@@ -1,18 +1,18 @@
-# SFTP Service Module Status
+# SFTP 服务模块状态
 
-## Scope
+## 范围
 
-Remote directory listing, uploads, downloads, zip archive generation, and server-to-server copy/move.
+远程目录列表、上传、下载、文本文件读写、zip 归档生成和服务器间复制/移动。
 
-## Important Files
+## 重要文件
 
 - `service.go`
 - `service_test.go`
 
-## Current State
+## 当前状态
 
-Supports directory listing, multi-file/multi-folder uploads, recursive directory archive download, and recursive copy/move through SFTP. Directory listings resolve requested paths through SFTP `RealPath`, return the resolved path, include mode and UID:GID owner metadata, and sort folders before files.
+支持目录列表、多文件/多目录上传、直接下载、面向在线编辑的 10 MB 远程文本读写、递归目录归档下载，以及通过 SFTP 递归复制/移动。目录列表会用 SFTP `RealPath` 解析请求路径，返回解析后的路径，包含 mode 和 UID:GID owner 元数据，并按文件夹优先排序。
 
-## Known Work
+## 已知工作
 
-Backend path APIs should continue to support both `~` and `/`. Real-server validation is still needed for deep trees, large transfers, permission-denied paths, and whether friendly owner names are worth resolving beyond UID:GID.
+后端路径 API 需要继续同时支持 `~` 和 `/`。深层目录、大文件传输、权限拒绝路径、文本保存权限和是否解析友好用户名，都需要真实服务器验证。

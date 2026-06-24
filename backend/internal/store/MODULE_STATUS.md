@@ -1,17 +1,17 @@
-# Store Module Status
+# 运行时存储模块状态
 
-## Scope
+## 范围
 
-In-memory active connection registry used by HTTP, terminal, SFTP, and monitor handlers.
+HTTP、终端、SFTP 和监控处理流程共用的内存连接注册表。
 
-## Important Files
+## 重要文件
 
 - `memory_store.go`
 
-## Current State
+## 当前状态
 
-Connections are stored in memory by generated IDs or preserved IDs from saved config. `List` returns summaries without passwords; `ListFull` is used only for encrypted persistence. Listing is stable-sorted by name, host, then ID.
+连接按生成 ID 或保存配置中的既有 ID 存入内存。`List` 返回不含密码的摘要；`ListFull` 只用于加密持久化。列表按名称、主机和 ID 稳定排序。
 
-## Known Work
+## 已知工作
 
-If short-lived unsaved sessions are reintroduced, split runtime sessions from persisted saved configs so temporary connections are not written to disk.
+如果未来重新引入短生命周期未保存会话，需要把运行时会话和持久化保存配置拆开，避免临时连接写入磁盘。

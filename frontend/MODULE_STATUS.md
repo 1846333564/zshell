@@ -1,20 +1,22 @@
-# Frontend Module Status
+# 前端模块状态
 
-## Scope
+## 范围
 
-Vue/Vite frontend for the Wails desktop window.
+Wails 桌面窗口中的 Vue/Vite 前端。
 
-## Important Files
+## 重要文件
 
 - `src/App.vue`
 - `src/style.css`
 - `src/components`
 - `src/services`
 
-## Current State
+## 当前状态
 
-The UI is a two-column desktop layout with a custom frameless-window top bar, left monitor panel, and right connection tabs, terminal, and file area. Saved connection management now uses backend config APIs instead of browser-local password history. The app shell blocks non-file-area context menus while allowing file-manager custom context menus, persists non-terminal UI zoom through backend preferences, and applies application-matched scrollbars globally.
+UI 是双栏桌面布局，包含自定义无边框窗口顶栏、左侧监控面板，以及右侧连接标签、终端和文件区域。保存连接管理使用后端配置 API，不把 SSH 密码保存在浏览器本地存储。应用壳会屏蔽非文件区系统右键菜单，同时允许文件管理器自定义菜单；非终端 UI 缩放通过后端偏好持久化；文件和终端右键菜单渲染在视口层，避免缩放导致坐标偏移；全局滚动条使用应用风格。
 
-## Known Work
+`src/App.vue` 现在提供“关于 zShell”弹窗和“检查更新”流程。文件区域包含在线文本编辑，编辑器以独立浮动窗口显示，支持保存和脏关闭处理。
 
-Run visual smoke checks against the packaged Wails window after large layout changes.
+## 已知工作
+
+较大布局修改后，需要在打包后的 Wails 窗口中做视觉冒烟检查。更新弹窗需要配合真实 GitHub Release 验证完整下载和重启流程。

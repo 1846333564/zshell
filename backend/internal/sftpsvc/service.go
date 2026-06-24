@@ -25,6 +25,16 @@ type Entry struct {
 	ModTime string `json:"modTime"`
 }
 
+const MaxTextEditBytes = 10 * 1024 * 1024
+
+type TextFile struct {
+	Name    string `json:"name"`
+	Path    string `json:"path"`
+	Size    int64  `json:"size"`
+	Content string `json:"content"`
+	ModTime string `json:"modTime"`
+}
+
 type UploadItem struct {
 	FileName     string
 	RelativePath string
@@ -255,6 +265,107 @@ func DownloadFile(conn model.Connection, remotePath string, timeout time.Duratio
 		sftpClient: sftpClient,
 		sshClient:  client,
 	}, path.Base(resolved), stat.Size(), nil
+}
+
+func ReadTextFile(conn model.Connection, remotePath string, timeout time.Duration) (TextFile, error) {
+	client, err := sshsvc.NewClient(conn, timeout)
+	if err != nil {
+		return TextFile{}, err
+	}
+	defer client.Close()
+
+	sftpClient, err := sftp.NewClient(client)
+	if err != nil {
+		return TextFile{}, fmt.Errorf("create sftp client: %w", err)
+	}
+	defer sftpClient.Close()
+
+	resolved, err := resolveRemotePath(sftpClient, remotePath)
+	if err != nil {
+		return TextFile{}, fmt.Errorf("resolve file: %w", err)
+	}
+
+	stat, err := sftpClient.Stat(resolved)
+	if err != nil {
+		return TextFile{}, fmt.Errorf("stat file: %w", err)
+	}
+	if stat.IsDir() {
+		return TextFile{}, fmt.Errorf("remote path is a directory")
+	}
+	if stat.Size() > MaxTextEditBytes {
+		return TextFile{}, fmt.Errorf("remote file is too large for text editing: %d bytes", stat.Size())
+	}
+
+	file, err := sftpClient.Open(resolved)
+	if err != nil {
+		return TextFile{}, fmt.Errorf("open remote file: %w", err)
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(io.LimitReader(file, MaxTextEditBytes+1))
+	if err != nil {
+		return TextFile{}, fmt.Errorf("read remote file: %w", err)
+	}
+	if len(data) > MaxTextEditBytes {
+		return TextFile{}, fmt.Errorf("remote file is too large for text editing")
+	}
+
+	return TextFile{
+		Name:    path.Base(resolved),
+		Path:    resolved,
+		Size:    stat.Size(),
+		Content: string(data),
+		ModTime: stat.ModTime().UTC().Format(time.RFC3339),
+	}, nil
+}
+
+func WriteTextFile(conn model.Connection, remotePath string, content string, timeout time.Duration) (TextFile, error) {
+	if len([]byte(content)) > MaxTextEditBytes {
+		return TextFile{}, fmt.Errorf("edited content is too large: %d bytes", len([]byte(content)))
+	}
+
+	client, err := sshsvc.NewClient(conn, timeout)
+	if err != nil {
+		return TextFile{}, err
+	}
+	defer client.Close()
+
+	sftpClient, err := sftp.NewClient(client)
+	if err != nil {
+		return TextFile{}, fmt.Errorf("create sftp client: %w", err)
+	}
+	defer sftpClient.Close()
+
+	resolved, err := resolveRemotePath(sftpClient, remotePath)
+	if err != nil {
+		return TextFile{}, fmt.Errorf("resolve file: %w", err)
+	}
+
+	stat, err := sftpClient.Stat(resolved)
+	if err != nil {
+		return TextFile{}, fmt.Errorf("stat file: %w", err)
+	}
+	if stat.IsDir() {
+		return TextFile{}, fmt.Errorf("remote path is a directory")
+	}
+
+	written, err := uploadToPath(sftpClient, resolved, strings.NewReader(content))
+	if err != nil {
+		return TextFile{}, err
+	}
+
+	stat, err = sftpClient.Stat(resolved)
+	if err != nil {
+		return TextFile{}, fmt.Errorf("stat saved file: %w", err)
+	}
+
+	return TextFile{
+		Name:    path.Base(resolved),
+		Path:    resolved,
+		Size:    written,
+		Content: content,
+		ModTime: stat.ModTime().UTC().Format(time.RFC3339),
+	}, nil
 }
 
 func ArchiveItems(conn model.Connection, remotePaths []string, target io.Writer, timeout time.Duration) error {

@@ -1,33 +1,33 @@
-# zShell - Step 2
+# zShell - 第 2 步
 
-## What is implemented
+## 已实现内容
 
-- WebSocket terminal endpoint: /ws/terminal
-- Message protocol implemented: input, output, error, ping, pong, resize
-- Frontend input over WebSocket is converted to command lines (line-buffered)
-- Command execution uses existing SSH service and returns output over WebSocket
-- Per WebSocket connection uses independent goroutines for:
-  - ws read loop
-  - command execution loop
-  - ws write loop
+- WebSocket 终端端点：`/ws/terminal`。
+- 消息协议：`input`、`output`、`error`、`ping`、`pong`、`resize`。
+- 前端通过 WebSocket 发送的输入会转换为按行缓冲的命令。
+- 命令执行复用 SSH 服务，并通过 WebSocket 返回输出。
+- 每个 WebSocket 连接使用独立 goroutine 处理读取、命令执行和写入。
 
-## Endpoint
+## 端点
 
-- WebSocket URL: ws://127.0.0.1:8080/ws/terminal?connectionId=<id>
+- WebSocket URL：`ws://127.0.0.1:8080/ws/terminal?connectionId=<id>`
 
-## Message protocol
+## 消息协议
 
-1. Client -> Server input
+1. 客户端发送输入
 
+```json
 {
   "type": "input",
   "data": {
     "text": "pwd\n"
   }
 }
+```
 
-2. Server -> Client output
+2. 服务端返回输出
 
+```json
 {
   "type": "output",
   "data": {
@@ -35,9 +35,11 @@
     "stderr": false
   }
 }
+```
 
-3. Server -> Client error
+3. 服务端返回错误
 
+```json
 {
   "type": "error",
   "data": {
@@ -45,30 +47,32 @@
     "message": "dial ssh: ..."
   }
 }
+```
 
 4. Ping/Pong
 
-- Client sends: { "type": "ping" }
-- Server replies: { "type": "pong" }
+- 客户端发送：`{ "type": "ping" }`
+- 服务端返回：`{ "type": "pong" }`
 
-5. Resize (reserved for Step 4 PTY)
+5. Resize
 
-- Client sends resize payload.
-- Server responds with type "resize-ack".
+该阶段为后续 PTY 保留 resize 消息，服务端返回 `resize-ack`。
 
-## Run
+## 运行
 
-1. Start backend
+1. 启动后端：
 
-   go mod tidy
-   go run ./cmd/zshell
+```powershell
+go mod tidy
+go run ./cmd/zshell
+```
 
-2. Create connection profile via HTTP (Step 1 API)
+2. 通过第 1 步 API 创建连接。
+3. 使用 connectionId 连接 WebSocket。
 
-3. Connect to WebSocket URL with connectionId
+## PowerShell 冒烟测试
 
-## PowerShell smoke test
-
+```powershell
 $body = @{ name='demo'; host='127.0.0.1'; port=22; username='root'; password='pass' } | ConvertTo-Json
 $created = Invoke-RestMethod -Method POST -Uri http://127.0.0.1:8080/api/connections -ContentType 'application/json' -Body $body
 $id = $created.connection.id
@@ -78,14 +82,4 @@ $uri = [Uri]("ws://127.0.0.1:8080/ws/terminal?connectionId=" + $id)
 $ws.ConnectAsync($uri, [Threading.CancellationToken]::None).GetAwaiter().GetResult() | Out-Null
 
 $msg = '{"type":"input","data":{"text":"pwd\\n"}}'
-$bytes = [Text.Encoding]::UTF8.GetBytes($msg)
-$ws.SendAsync([ArraySegment[byte]]::new($bytes), [System.Net.WebSockets.WebSocketMessageType]::Text, $true, [Threading.CancellationToken]::None).GetAwaiter().GetResult() | Out-Null
-
-$buffer = New-Object byte[] 8192
-$res = $ws.ReceiveAsync([ArraySegment[byte]]::new($buffer), [Threading.CancellationToken]::None).GetAwaiter().GetResult()
-[Text.Encoding]::UTF8.GetString($buffer, 0, $res.Count)
-$ws.Dispose()
-
-## Note
-
-This step focuses on WebSocket transport. Full interactive PTY behavior for top/vim is planned in Step 4.
+```

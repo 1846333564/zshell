@@ -68,6 +68,26 @@ export function saveUIPreferences(payload) {
   });
 }
 
+export function getAppInfo() {
+  return requestJson('/api/app/info', {
+    method: 'GET',
+  });
+}
+
+export function checkForUpdate() {
+  return requestJson('/api/update/check', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+export function applyUpdate() {
+  return requestJson('/api/update/apply', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
 export function testConnection(connectionId) {
   return requestJson('/api/ssh/test', {
     method: 'POST',
@@ -79,6 +99,20 @@ export function listRemoteFiles(connectionId, path) {
   return requestJson('/api/sftp/list', {
     method: 'POST',
     body: JSON.stringify({ connectionId, path }),
+  });
+}
+
+export function readRemoteTextFile(connectionId, path) {
+  return requestJson('/api/sftp/file/read', {
+    method: 'POST',
+    body: JSON.stringify({ connectionId, path }),
+  });
+}
+
+export function saveRemoteTextFile(connectionId, path, content) {
+  return requestJson('/api/sftp/file/write', {
+    method: 'PUT',
+    body: JSON.stringify({ connectionId, path, content }),
   });
 }
 

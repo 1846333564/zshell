@@ -6,3 +6,5 @@ backend/internal/web/app/*
 !backend/internal/web/app/.gitkeep
 backend/build/
 backend/frontend/
+release/*.exe
+!release/.gitkeep

@@ -1,19 +1,19 @@
-# WebSocket Terminal Module Status
+# WebSocket 终端模块状态
 
-## Scope
+## 范围
 
-WebSocket bridge between xterm.js frontend and SSH PTY shell.
+xterm.js 前端和 SSH PTY shell 之间的 WebSocket 桥接。
 
-## Important Files
+## 重要文件
 
 - `terminal_handler.go`
 - `protocol.go`
 - `terminal_handler_test.go`
 
-## Current State
+## 当前状态
 
-Supports raw input, output streaming, resize messages, protocol ping/pong, server-side WebSocket ping frames with read deadlines, and UTF-8 boundary handling.
+支持原始输入、输出流、resize 消息、协议层 ping/pong、服务端 WebSocket ping 帧、读取 deadline，以及 UTF-8 多字节边界处理。
 
-## Known Work
+## 已知工作
 
-Keep WebSocket on the real local API server; Wails asset server does not support terminal WebSocket upgrades. If users still see idle disconnects, capture the terminal error code before close to distinguish WebSocket transport failure from remote SSH shell exit.
+WebSocket 必须保持在真实本地 API 服务上；Wails 静态资源服务不支持终端 WebSocket upgrade。若用户仍看到空闲断连，需要先捕获终端关闭前的错误码，用于区分 WebSocket 传输失败和远程 SSH shell 自身退出。

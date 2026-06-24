@@ -13,12 +13,14 @@ import (
 	"strings"
 	"time"
 
+	"zshell/backend/internal/appinfo"
 	"zshell/backend/internal/configstore"
 	"zshell/backend/internal/model"
 	"zshell/backend/internal/monitorsvc"
 	"zshell/backend/internal/sftpsvc"
 	"zshell/backend/internal/sshsvc"
 	"zshell/backend/internal/store"
+	"zshell/backend/internal/updatesvc"
 	"zshell/backend/internal/ws"
 )
 
@@ -28,6 +30,7 @@ type Server struct {
 	sshTimeout  time.Duration
 	terminalWS  *ws.TerminalHandler
 	monitor     *monitorsvc.Service
+	update      *updatesvc.Service
 }
 
 func NewServer(connStore *store.MemoryStore, sshTimeout time.Duration) *Server {
@@ -51,19 +54,25 @@ func NewServer(connStore *store.MemoryStore, sshTimeout time.Duration) *Server {
 		sshTimeout:  sshTimeout,
 		terminalWS:  ws.NewTerminalHandler(connStore, sshTimeout),
 		monitor:     monitorsvc.NewService(),
+		update:      updatesvc.NewService(),
 	}
 }
 
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/health", s.handleHealth)
+	mux.HandleFunc("/api/app/info", s.handleAppInfo)
 	mux.HandleFunc("/api/connections", s.handleConnections)
 	mux.HandleFunc("/api/config/connections", s.handleConnectionConfigs)
 	mux.HandleFunc("/api/config/preferences", s.handleUIPreferences)
+	mux.HandleFunc("/api/update/check", s.handleUpdateCheck)
+	mux.HandleFunc("/api/update/apply", s.handleUpdateApply)
 	mux.HandleFunc("/api/ssh/test", s.handleSSHTest)
 	mux.HandleFunc("/api/ssh/exec", s.handleSSHExec)
 	mux.HandleFunc("/api/sftp/list", s.handleSFTPList)
 	mux.HandleFunc("/api/sftp/upload", s.handleSFTPUpload)
 	mux.HandleFunc("/api/sftp/download", s.handleSFTPDownload)
+	mux.HandleFunc("/api/sftp/file/read", s.handleSFTPFileRead)
+	mux.HandleFunc("/api/sftp/file/write", s.handleSFTPFileWrite)
 	mux.HandleFunc("/api/sftp/archive", s.handleSFTPArchive)
 	mux.HandleFunc("/api/sftp/transfer", s.handleSFTPTransfer)
 	mux.HandleFunc("/api/monitor/snapshot", s.handleMonitorSnapshot)
@@ -94,6 +103,17 @@ type sftpListRequest struct {
 	Path         string `json:"path"`
 }
 
+type sftpFileReadRequest struct {
+	ConnectionID string `json:"connectionId"`
+	Path         string `json:"path"`
+}
+
+type sftpFileWriteRequest struct {
+	ConnectionID string `json:"connectionId"`
+	Path         string `json:"path"`
+	Content      string `json:"content"`
+}
+
 type sftpTransferRequest struct {
 	SourceConnectionID string                 `json:"sourceConnectionId"`
 	TargetConnectionID string                 `json:"targetConnectionId"`
@@ -121,6 +141,43 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"status": "ok",
 		"time":   time.Now().UTC().Format(time.RFC3339),
 	})
+}
+
+func (s *Server) handleAppInfo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"app": appinfo.Current()})
+}
+
+func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	result, err := s.update.Check(r.Context())
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"update": result})
+}
+
+func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	result, err := s.update.Apply(r.Context())
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"update": result})
 }
 
 func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
@@ -420,6 +477,68 @@ func (s *Server) handleSFTPDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
 
 	_, _ = io.Copy(w, stream)
+}
+
+func (s *Server) handleSFTPFileRead(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req sftpFileReadRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if strings.TrimSpace(req.ConnectionID) == "" || strings.TrimSpace(req.Path) == "" {
+		writeError(w, http.StatusBadRequest, "connectionId and path are required")
+		return
+	}
+
+	conn, ok := s.store.Get(req.ConnectionID)
+	if !ok {
+		writeError(w, http.StatusNotFound, "connection not found")
+		return
+	}
+
+	file, err := sftpsvc.ReadTextFile(conn, req.Path, s.sshTimeout)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"file": file})
+}
+
+func (s *Server) handleSFTPFileWrite(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req sftpFileWriteRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if strings.TrimSpace(req.ConnectionID) == "" || strings.TrimSpace(req.Path) == "" {
+		writeError(w, http.StatusBadRequest, "connectionId and path are required")
+		return
+	}
+
+	conn, ok := s.store.Get(req.ConnectionID)
+	if !ok {
+		writeError(w, http.StatusNotFound, "connection not found")
+		return
+	}
+
+	file, err := sftpsvc.WriteTextFile(conn, req.Path, req.Content, s.sshTimeout)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"file": file})
 }
 
 func (s *Server) handleSFTPArchive(w http.ResponseWriter, r *http.Request) {
