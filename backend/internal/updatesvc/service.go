@@ -170,9 +170,12 @@ func (s *Service) latestRelease(ctx context.Context) (githubRelease, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return githubRelease{}, fmt.Errorf("github release not found")
+		return s.latestReleaseByRedirect(ctx)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
+			return s.latestReleaseByRedirect(ctx)
+		}
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
 		return githubRelease{}, fmt.Errorf("github release request failed: %s %s", resp.Status, strings.TrimSpace(string(body)))
 	}
@@ -182,6 +185,52 @@ func (s *Service) latestRelease(ctx context.Context) (githubRelease, error) {
 		return githubRelease{}, fmt.Errorf("decode github release: %w", err)
 	}
 	return release, nil
+}
+
+func (s *Service) latestReleaseByRedirect(ctx context.Context) (githubRelease, error) {
+	url := fmt.Sprintf("https://github.com/%s/%s/releases/latest", appinfo.GitHubOwner, appinfo.GitHubRepo)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return githubRelease{}, err
+	}
+	req.Header.Set("User-Agent", appinfo.ProductName+"/"+appinfo.Version)
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return githubRelease{}, fmt.Errorf("check github release page: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return githubRelease{}, fmt.Errorf("github release page request failed: %s", resp.Status)
+	}
+
+	parts := strings.Split(strings.Trim(resp.Request.URL.Path, "/"), "/")
+	if len(parts) < 5 {
+		return githubRelease{}, fmt.Errorf("cannot resolve latest release tag")
+	}
+	tag := parts[len(parts)-1]
+	version := normalizeVersion(tag)
+	if version == "" {
+		return githubRelease{}, fmt.Errorf("latest release tag is empty")
+	}
+
+	assetName := appinfo.ReleaseAssetName(version)
+	downloadBase := fmt.Sprintf("https://github.com/%s/%s/releases/download/%s", appinfo.GitHubOwner, appinfo.GitHubRepo, tag)
+	return githubRelease{
+		TagName: tag,
+		Name:    appinfo.ProductName + " " + version,
+		HTMLURL: resp.Request.URL.String(),
+		Assets: []githubAsset{
+			{
+				Name:               assetName,
+				BrowserDownloadURL: downloadBase + "/" + assetName,
+			},
+			{
+				Name:               assetName + ".sha256",
+				BrowserDownloadURL: downloadBase + "/" + assetName + ".sha256",
+			},
+		},
+	}, nil
 }
 
 func (s *Service) downloadExecutable(ctx context.Context, asset githubAsset) (string, string, error) {
