@@ -447,6 +447,7 @@ func TransferItems(sourceConn model.Connection, targetConn model.Connection, tar
 	if err != nil {
 		return TransferBatchResult{}, fmt.Errorf("resolve target dir: %w", err)
 	}
+	sameConnection := isSameConnection(sourceConn, targetConn)
 
 	result := TransferBatchResult{
 		OK:          true,
@@ -467,6 +468,24 @@ func TransferItems(sourceConn model.Connection, targetConn model.Connection, tar
 		}
 
 		targetPath := path.Join(resolvedTargetDir, path.Base(sourcePath))
+		if sameConnection && stat.IsDir() && isSameOrChildPath(resolvedTargetDir, sourcePath) {
+			return TransferBatchResult{}, fmt.Errorf("cannot %s directory %s into itself or a child directory", action, sourcePath)
+		}
+		if action == "copy" {
+			targetPath, err = availableCopyTargetPath(targetSFTP, sourcePath, targetPath, sameConnection)
+			if err != nil {
+				return TransferBatchResult{}, err
+			}
+		}
+		if action == "move" && sameConnection && targetPath == sourcePath {
+			if stat.IsDir() {
+				result.Directories = append(result.Directories, targetPath)
+			} else {
+				result.Files = append(result.Files, TransferResult{RemotePath: targetPath, Size: stat.Size()})
+			}
+			continue
+		}
+
 		if stat.IsDir() {
 			files, dirs, bytesCopied, err := copyRemoteDir(sourceSFTP, targetSFTP, sourcePath, targetPath)
 			if err != nil {
@@ -492,6 +511,73 @@ func TransferItems(sourceConn model.Connection, targetConn model.Connection, tar
 	}
 
 	return result, nil
+}
+
+func isSameConnection(left model.Connection, right model.Connection) bool {
+	if left.ID != "" || right.ID != "" {
+		return left.ID == right.ID
+	}
+	return left.Host == right.Host && left.Port == right.Port && left.Username == right.Username && left.AuthMethod == right.AuthMethod
+}
+
+func availableCopyTargetPath(client *sftp.Client, sourcePath string, targetPath string, sameConnection bool) (string, error) {
+	candidate := targetPath
+	for index := 1; index < 1000; index += 1 {
+		if sameConnection && candidate == sourcePath {
+			candidate = copyPathCandidate(targetPath, index)
+			continue
+		}
+
+		exists, err := remotePathExists(client, candidate)
+		if err != nil {
+			return "", err
+		}
+		if !exists {
+			return candidate, nil
+		}
+		candidate = copyPathCandidate(targetPath, index)
+	}
+
+	return "", fmt.Errorf("find available copy target for %s: too many conflicts", targetPath)
+}
+
+func remotePathExists(client *sftp.Client, remotePath string) (bool, error) {
+	if _, err := client.Stat(remotePath); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("stat target path %s: %w", remotePath, err)
+	}
+	return true, nil
+}
+
+func copyPathCandidate(originalPath string, index int) string {
+	dir := path.Dir(originalPath)
+	base := path.Base(originalPath)
+	ext := path.Ext(base)
+	name := strings.TrimSuffix(base, ext)
+	if name == "" {
+		name = base
+		ext = ""
+	}
+
+	suffix := " copy"
+	if index > 1 {
+		suffix = fmt.Sprintf(" copy %d", index)
+	}
+	return path.Join(dir, name+suffix+ext)
+}
+
+func isSameOrChildPath(candidate string, parent string) bool {
+	cleanCandidate := path.Clean(candidate)
+	cleanParent := path.Clean(parent)
+	if cleanCandidate == cleanParent {
+		return true
+	}
+	if cleanParent == "/" {
+		return strings.HasPrefix(cleanCandidate, "/")
+	}
+	return strings.HasPrefix(cleanCandidate, cleanParent+"/")
 }
 
 func normalizeRemotePath(value string) string {

@@ -269,6 +269,7 @@ const DEFAULT_FILE_OPEN_ACTION = 'textEdit';
 const DEFAULT_EDITOR_WIDTH = 980;
 const DEFAULT_EDITOR_HEIGHT = 660;
 const MIN_EDITOR_TOP = 48;
+const CLIPBOARD_ACTIONS = new Set(['copy', 'move']);
 
 const columns = [
   { key: 'name', label: '名称', width: 280 },
@@ -1155,10 +1156,11 @@ function writeClipboard(action) {
   if (!hasSelection.value) {
     return;
   }
+  const normalizedAction = normalizeClipboardAction(action);
 
   const payload = {
     sourceConnectionId: props.connectionId,
-    action,
+    action: normalizedAction,
     items: selectedEntries.value.map((entry) => ({
       path: entry.path,
       isDir: entry.isDir,
@@ -1174,18 +1176,25 @@ async function pasteClipboard(targetPath = contextTargetDir.value) {
     return;
   }
 
+  const pendingClipboard = normalizeClipboardPayload(clipboard.value);
+  if (!pendingClipboard) {
+    clipboard.value = null;
+    localStorage.removeItem(CLIPBOARD_KEY);
+    return;
+  }
+
   loading.value = true;
   errorMessage.value = '';
 
   try {
     await transferRemoteItems({
-      sourceConnectionId: clipboard.value.sourceConnectionId,
+      sourceConnectionId: pendingClipboard.sourceConnectionId,
       targetConnectionId: props.connectionId,
       targetPath: targetPath || currentPath.value || HOME_PATH,
-      action: clipboard.value.action,
-      items: clipboard.value.items,
+      action: pendingClipboard.action,
+      items: pendingClipboard.items,
     });
-    if (clipboard.value.action === 'move') {
+    if (pendingClipboard.action === 'move') {
       localStorage.removeItem(CLIPBOARD_KEY);
       clipboard.value = null;
     }
@@ -1412,14 +1421,35 @@ function readClipboard() {
     if (!raw) {
       return null;
     }
-    const parsed = JSON.parse(raw);
-    if (!parsed?.sourceConnectionId || !Array.isArray(parsed.items)) {
-      return null;
-    }
-    return parsed;
+    return normalizeClipboardPayload(JSON.parse(raw));
   } catch {
     return null;
   }
+}
+
+function normalizeClipboardPayload(value) {
+  if (!value?.sourceConnectionId || !Array.isArray(value.items) || value.items.length === 0) {
+    return null;
+  }
+  const items = value.items
+    .filter((item) => item?.path)
+    .map((item) => ({
+      path: item.path,
+      isDir: Boolean(item.isDir),
+    }));
+  if (items.length === 0) {
+    return null;
+  }
+  return {
+    sourceConnectionId: value.sourceConnectionId,
+    action: normalizeClipboardAction(value.action),
+    items,
+    createdAt: Number(value.createdAt) || Date.now(),
+  };
+}
+
+function normalizeClipboardAction(action) {
+  return CLIPBOARD_ACTIONS.has(action) ? action : 'copy';
 }
 
 function onStorage(event) {

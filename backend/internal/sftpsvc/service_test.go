@@ -64,3 +64,50 @@ func TestCleanZipPathDropsUnsafeSegments(t *testing.T) {
 		t.Fatalf("unexpected zip path: %q", got)
 	}
 }
+
+func TestCopyPathCandidate(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		index int
+		want  string
+	}{
+		{name: "file first copy", input: "/home/demo.txt", index: 1, want: "/home/demo copy.txt"},
+		{name: "file second copy", input: "/home/demo.txt", index: 2, want: "/home/demo copy 2.txt"},
+		{name: "directory copy", input: "/home/demo", index: 1, want: "/home/demo copy"},
+		{name: "dotfile copy", input: "/home/.env", index: 1, want: "/home/.env copy"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := copyPathCandidate(tc.input, tc.index)
+			if got != tc.want {
+				t.Fatalf("copyPathCandidate(%q, %d)=%q, want %q", tc.input, tc.index, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsSameOrChildPath(t *testing.T) {
+	cases := []struct {
+		name      string
+		candidate string
+		parent    string
+		want      bool
+	}{
+		{name: "same path", candidate: "/home/demo", parent: "/home/demo", want: true},
+		{name: "child path", candidate: "/home/demo/sub", parent: "/home/demo", want: true},
+		{name: "sibling prefix is not child", candidate: "/home/demo2", parent: "/home/demo", want: false},
+		{name: "parent path", candidate: "/home", parent: "/home/demo", want: false},
+		{name: "root contains absolute path", candidate: "/home/demo", parent: "/", want: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isSameOrChildPath(tc.candidate, tc.parent)
+			if got != tc.want {
+				t.Fatalf("isSameOrChildPath(%q, %q)=%t, want %t", tc.candidate, tc.parent, got, tc.want)
+			}
+		})
+	}
+}
