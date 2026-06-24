@@ -23,6 +23,8 @@ type Service struct {
 	client *http.Client
 }
 
+const updateDownloadAttempts = 3
+
 type CheckResult struct {
 	CurrentVersion string `json:"currentVersion"`
 	LatestVersion  string `json:"latestVersion"`
@@ -60,14 +62,14 @@ type githubAsset struct {
 
 func NewService() *Service {
 	return &Service{
-		client: &http.Client{Timeout: 45 * time.Second},
+		client: &http.Client{Timeout: 75 * time.Second},
 	}
 }
 
 func (s *Service) Check(ctx context.Context) (CheckResult, error) {
 	release, err := s.latestRelease(ctx)
 	if err != nil {
-		return CheckResult{}, err
+		return CheckResult{}, explainCheckError(err)
 	}
 
 	latestVersion := normalizeVersion(release.TagName)
@@ -100,7 +102,7 @@ func (s *Service) Check(ctx context.Context) (CheckResult, error) {
 func (s *Service) Apply(ctx context.Context) (ApplyResult, error) {
 	release, err := s.latestRelease(ctx)
 	if err != nil {
-		return ApplyResult{}, err
+		return ApplyResult{}, explainCheckError(err)
 	}
 
 	latestVersion := normalizeVersion(release.TagName)
@@ -174,7 +176,12 @@ func (s *Service) latestRelease(ctx context.Context) (githubRelease, error) {
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
-			return s.latestReleaseByRedirect(ctx)
+			release, fallbackErr := s.latestReleaseByRedirect(ctx)
+			if fallbackErr == nil {
+				return release, nil
+			}
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+			return githubRelease{}, fmt.Errorf("github api limited: %s %s; release page fallback failed: %w", resp.Status, strings.TrimSpace(string(body)), fallbackErr)
 		}
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
 		return githubRelease{}, fmt.Errorf("github release request failed: %s %s", resp.Status, strings.TrimSpace(string(body)))
@@ -234,6 +241,22 @@ func (s *Service) latestReleaseByRedirect(ctx context.Context) (githubRelease, e
 }
 
 func (s *Service) downloadExecutable(ctx context.Context, asset githubAsset) (string, string, error) {
+	var lastErr error
+	for attempt := 1; attempt <= updateDownloadAttempts; attempt++ {
+		target, digest, err := s.downloadExecutableOnce(ctx, asset)
+		if err == nil {
+			return target, digest, nil
+		}
+		lastErr = err
+		if ctx.Err() != nil {
+			break
+		}
+		waitBeforeRetry(ctx, attempt)
+	}
+	return "", "", explainDownloadError("下载更新失败", asset.BrowserDownloadURL, lastErr)
+}
+
+func (s *Service) downloadExecutableOnce(ctx context.Context, asset githubAsset) (string, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, asset.BrowserDownloadURL, nil)
 	if err != nil {
 		return "", "", err
@@ -399,6 +422,22 @@ func (s *Service) findSHA256Digest(ctx context.Context, assets []githubAsset, ex
 }
 
 func (s *Service) downloadSHA256(ctx context.Context, url string, exeName string) (string, error) {
+	var lastErr error
+	for attempt := 1; attempt <= updateDownloadAttempts; attempt++ {
+		digest, err := s.downloadSHA256Once(ctx, url, exeName)
+		if err == nil {
+			return digest, nil
+		}
+		lastErr = err
+		if ctx.Err() != nil {
+			break
+		}
+		waitBeforeRetry(ctx, attempt)
+	}
+	return "", explainDownloadError("下载校验文件失败", url, lastErr)
+}
+
+func (s *Service) downloadSHA256Once(ctx context.Context, url string, exeName string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
@@ -437,4 +476,34 @@ func (s *Service) downloadSHA256(ctx context.Context, url string, exeName string
 
 func powerShellQuote(value string) string {
 	return strings.ReplaceAll(value, "'", "''")
+}
+
+func waitBeforeRetry(ctx context.Context, attempt int) {
+	if attempt >= updateDownloadAttempts {
+		return
+	}
+	timer := time.NewTimer(time.Duration(attempt) * 1200 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+	case <-timer.C:
+	}
+}
+
+func explainCheckError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("检查 GitHub Release 失败。GitHub API 可能被限流，或当前网络无法访问 GitHub。请稍后重试，或手动打开 %s 下载最新版本。原始错误：%w", manualReleaseURL(), err)
+}
+
+func explainDownloadError(action string, downloadURL string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s：无法稳定连接 GitHub Release 下载地址。请检查网络或代理后重试，或手动下载 %s。原始错误：%w", action, downloadURL, err)
+}
+
+func manualReleaseURL() string {
+	return fmt.Sprintf("https://github.com/%s/%s/releases/latest", appinfo.GitHubOwner, appinfo.GitHubRepo)
 }

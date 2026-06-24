@@ -1,6 +1,9 @@
 package updatesvc
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestCompareVersions(t *testing.T) {
 	tests := []struct {
@@ -35,4 +38,37 @@ func TestFindExecutableAsset(t *testing.T) {
 	if asset.Name != "zshell.0.0.1.exe" {
 		t.Fatalf("asset.Name = %q, want zshell.0.0.1.exe", asset.Name)
 	}
+}
+
+func TestExplainDownloadErrorIncludesManualURL(t *testing.T) {
+	err := explainDownloadError("下载更新失败", "https://example.test/zshell.exe", assertErr("timeout"))
+	if err == nil {
+		t.Fatal("explainDownloadError returned nil")
+	}
+	got := err.Error()
+	if !containsAll(got, []string{"下载更新失败", "https://example.test/zshell.exe", "timeout"}) {
+		t.Fatalf("error message %q does not include expected context", got)
+	}
+}
+
+func TestManualReleaseURL(t *testing.T) {
+	want := "https://github.com/1846333564/zshell/releases/latest"
+	if got := manualReleaseURL(); got != want {
+		t.Fatalf("manualReleaseURL() = %q, want %q", got, want)
+	}
+}
+
+type assertErr string
+
+func (e assertErr) Error() string {
+	return string(e)
+}
+
+func containsAll(value string, parts []string) bool {
+	for _, part := range parts {
+		if !strings.Contains(value, part) {
+			return false
+		}
+	}
+	return true
 }

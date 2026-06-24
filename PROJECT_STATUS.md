@@ -2,7 +2,7 @@
 
 ## 项目概览
 
-zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/WebView2、Vue、xterm.js 和基于 SSH 的 SFTP。当前版本从 `VERSION` 文件读取，本次版本为 `0.0.2`，版本号从 `0.0.1` 起步。发布产物输出到项目根目录的 `release` 文件夹，命名格式为 `zshell.<版本号>.exe`。
+zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/WebView2、Vue、xterm.js 和基于 SSH 的 SFTP。当前版本从 `VERSION` 文件读取，本次版本为 `0.0.3`，版本号从 `0.0.1` 起步。发布产物输出到项目根目录的 `release` 文件夹，命名格式为 `zshell.<版本号>.exe`。
 
 ## 当前架构
 
@@ -23,7 +23,7 @@ zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/Web
 - SFTP 浏览、上传、下载、归档下载、远程文本读写和远程复制/移动。
 - Wails Windows 可执行文件打包。
 - 基于 `VERSION` 的版本号管理；默认后续版本只递增最后一位。
-- GitHub Release 更新检查和自更新基础链路。
+- GitHub Release 更新检查和自更新链路，包含 API 限流 fallback、下载重试、校验和手动下载入口。
 - Linux 监控快照 API 和左侧监控 UI。
 - 10000 以上动态后端端口。
 - 后端管理的保存连接配置增删改查，配置使用 Windows DPAPI 加密落盘。
@@ -43,7 +43,7 @@ zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/Web
 - 更完整的真实服务器验证仍依赖用户提供 SSH 目标。
 - SFTP 所属用户展示目前使用协议层 UID:GID；若要展示友好用户名，需要额外远程查询。
 - 在线编辑当前按文本处理并限制 10 MB；二进制安全编辑和显式编码选择是后续工作。
-- GitHub Release 自更新依赖公开可访问的 Release 资产；私有仓库发布需要额外认证方案。
+- GitHub Release 自更新依赖公开可访问的 Release 资产；私有仓库发布需要额外认证方案。用户当前网络若无法直连 GitHub 资产，仍需要配置可被进程继承的代理或手动下载安装包。
 
 ## 必要工作流
 

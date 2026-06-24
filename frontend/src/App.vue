@@ -178,6 +178,7 @@
             >
               确认更新
             </button>
+            <button v-if="updateDialog.releaseUrl" class="small-btn" type="button" @click="openReleasePage">打开下载页</button>
             <button class="small-btn" type="button" :disabled="updateDialog.status === 'applying'" @click="closeUpdateDialog">关闭</button>
           </footer>
         </section>
@@ -220,6 +221,7 @@ const activeSessionId = ref('');
 const appInfo = ref({});
 const aboutDialog = ref({ visible: false });
 const updateDialog = ref(defaultUpdateDialog());
+const releaseLatestURL = 'https://github.com/1846333564/zshell/releases/latest';
 
 const activeSession = computed(() => sessions.value.find((item) => item.connectionId === activeSessionId.value) || null);
 
@@ -423,6 +425,7 @@ function defaultUpdateDialog() {
     message: '',
     notes: '',
     error: '',
+    releaseUrl: '',
   };
 }
 
@@ -451,6 +454,7 @@ async function checkUpdatesFromAbout() {
         message: '是否确认更新？确认后会下载新版本、替换当前程序并自动重启。',
         notes: update.notes || '',
         error: '',
+        releaseUrl: update.releaseUrl || releaseLatestURL,
       };
       return;
     }
@@ -464,6 +468,7 @@ async function checkUpdatesFromAbout() {
       message: '没有发现可用更新。',
       notes: '',
       error: '',
+      releaseUrl: update.releaseUrl || releaseLatestURL,
     };
   } catch (error) {
     updateDialog.value = {
@@ -474,6 +479,7 @@ async function checkUpdatesFromAbout() {
       subtitle: `当前版本 ${appInfo.value.version || '0.0.1'}`,
       message: '无法完成更新检查。',
       error: error instanceof Error ? error.message : '检查更新失败',
+      releaseUrl: releaseLatestURL,
     };
   }
 }
@@ -501,8 +507,14 @@ async function confirmApplyUpdate() {
       status: 'error',
       error: error instanceof Error ? error.message : '更新失败',
       message: '更新未完成。',
+      releaseUrl: updateDialog.value.releaseUrl || releaseLatestURL,
     };
   }
+}
+
+function openReleasePage() {
+  const url = updateDialog.value.releaseUrl || releaseLatestURL;
+  window.open(url, '_blank', 'noopener');
 }
 
 function closeUpdateDialog() {
