@@ -36,6 +36,24 @@
       </div>
     </div>
 
+    <div class="form-row">
+      <label>工作模式</label>
+      <div class="auth-options">
+        <label>
+          <input v-model="form.workMode" type="radio" value="frontend" />
+          前端模式
+        </label>
+        <label>
+          <input v-model="form.workMode" type="radio" value="backend" />
+          后端模式
+        </label>
+        <label>
+          <input v-model="form.workMode" type="radio" value="ops" />
+          运维模式
+        </label>
+      </div>
+    </div>
+
     <div v-if="form.authMethod === 'password'" class="form-row">
       <label>密码</label>
       <input v-model="form.password" type="password" :placeholder="passwordPlaceholder" />
@@ -75,6 +93,7 @@ const props = defineProps({
       username: 'root',
       password: '',
       authMethod: 'password',
+      workMode: 'ops',
     }),
   },
   mode: {
@@ -101,6 +120,7 @@ const form = reactive({
   username: '',
   password: '',
   authMethod: 'password',
+  workMode: 'ops',
 });
 
 const passwordPlaceholder = computed(() => (props.mode === 'edit' ? '留空则保留已保存密码' : '请输入密码'));
@@ -115,6 +135,7 @@ watch(
     form.username = value?.username || 'root';
     form.password = value?.password || '';
     form.authMethod = value?.authMethod || 'password';
+    form.workMode = normalizeWorkMode(value?.workMode);
   },
   { immediate: true, deep: true },
 );
@@ -132,6 +153,11 @@ function submit() {
     username: form.username,
     password: form.authMethod === 'password' ? form.password : '',
     authMethod: form.authMethod,
+    workMode: normalizeWorkMode(form.workMode),
   });
+}
+
+function normalizeWorkMode(value) {
+  return ['frontend', 'backend', 'ops'].includes(value) ? value : 'ops';
 }
 </script>

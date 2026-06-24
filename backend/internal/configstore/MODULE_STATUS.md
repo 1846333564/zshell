@@ -12,7 +12,7 @@
 
 ## 当前状态
 
-保存连接和 UI 偏好会通过 `os.UserConfigDir()` 写入 `%AppData%\zShell\connections.dpapi`，并用 Windows DPAPI 针对当前用户加密/解密。当前 UI 偏好包含非终端 UI 缩放和终端字体大小。非 Windows 构建会返回明确的不支持错误。
+保存连接和 UI 偏好会通过 `os.UserConfigDir()` 写入 `%AppData%\zShell\connections.dpapi`，并用 Windows DPAPI 针对当前用户加密/解密。连接配置包含认证方式和工作模式；当前 UI 偏好包含非终端 UI 缩放和终端字体大小。非 Windows 构建会返回明确的不支持错误。
 
 ## 已知工作
 

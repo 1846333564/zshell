@@ -85,7 +85,7 @@
                 >
                   <div class="history-meta">
                     <strong>{{ item.name }}</strong>
-                    <span>{{ item.host }}:{{ item.port }} · {{ item.username }} · {{ authLabel(item.authMethod) }}</span>
+                    <span>{{ item.host }}:{{ item.port }} · {{ item.username }} · {{ authLabel(item.authMethod) }} · {{ workModeLabel(item.workMode) }}</span>
                   </div>
                   <div class="history-actions">
                     <button class="mini-btn" :disabled="busy" @click="connectFromSaved(item)">连接</button>
@@ -124,7 +124,7 @@
           <div class="splitter" title="拖拽调整控制台高度" @mousedown.prevent="startDrag"></div>
 
           <div class="file-band panel">
-            <FileManager :key="activeSession.connectionId" :connection-id="activeSession.connectionId" />
+            <FileManager :key="`${activeSession.connectionId}:${activeSession.workMode}`" :connection-id="activeSession.connectionId" :work-mode="activeSession.workMode" />
           </div>
         </section>
       </section>
@@ -292,6 +292,7 @@ function openSession(connection) {
     port: Number(connection.port) || 22,
     username: connection.username,
     authMethod: connection.authMethod || 'password',
+    workMode: normalizeWorkMode(connection.workMode),
   };
 
   sessions.value = [...sessions.value.filter((item) => item.connectionId !== session.connectionId), session];
@@ -336,6 +337,7 @@ function editSavedConnection(item) {
     username: item.username,
     password: '',
     authMethod: item.authMethod || 'password',
+    workMode: normalizeWorkMode(item.workMode),
   };
 }
 
@@ -389,6 +391,7 @@ function normalizeConnection(connection) {
     port: Number(connection?.port) || 22,
     username: String(connection?.username || ''),
     authMethod: String(connection?.authMethod || 'password'),
+    workMode: normalizeWorkMode(connection?.workMode),
   };
 }
 
@@ -401,6 +404,7 @@ function normalizeConnectionPayload(payload) {
     username: String(payload.username || '').trim(),
     password: payload.authMethod === 'password' ? String(payload.password || '') : '',
     authMethod: payload.authMethod || 'password',
+    workMode: normalizeWorkMode(payload.workMode),
   };
 }
 
@@ -413,11 +417,27 @@ function defaultConnectionDraft() {
     username: 'root',
     password: '',
     authMethod: 'password',
+    workMode: 'ops',
   };
 }
 
 function authLabel(authMethod) {
   return authMethod === 'id_rsa' ? '~/.ssh/id_rsa' : '密码';
+}
+
+function normalizeWorkMode(value) {
+  return ['frontend', 'backend', 'ops'].includes(value) ? value : 'ops';
+}
+
+function workModeLabel(workMode) {
+  switch (normalizeWorkMode(workMode)) {
+    case 'frontend':
+      return '前端模式';
+    case 'backend':
+      return '后端模式';
+    default:
+      return '运维模式';
+  }
 }
 
 async function loadAppInfo() {

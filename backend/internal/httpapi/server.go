@@ -89,6 +89,7 @@ type createConnectionRequest struct {
 	Username   string `json:"username"`
 	Password   string `json:"password"`
 	AuthMethod string `json:"authMethod"`
+	WorkMode   string `json:"workMode"`
 }
 
 type idRequest struct {
@@ -743,6 +744,7 @@ func (s *Server) handleMonitorSnapshot(w http.ResponseWriter, r *http.Request) {
 
 func connectionFromRequest(req createConnectionRequest, existing model.Connection) model.Connection {
 	authMethod := normalizeAuthMethod(req.AuthMethod)
+	workMode := normalizeWorkMode(req.WorkMode)
 	password := strings.TrimSpace(req.Password)
 	if authMethod == "password" && password == "" {
 		password = existing.Password
@@ -764,6 +766,7 @@ func connectionFromRequest(req createConnectionRequest, existing model.Connectio
 		Username:   strings.TrimSpace(req.Username),
 		Password:   password,
 		AuthMethod: authMethod,
+		WorkMode:   workMode,
 	}
 }
 
@@ -786,6 +789,10 @@ func validateConnectionRequest(req createConnectionRequest, existing model.Conne
 	}
 	if authMethod == "password" && strings.TrimSpace(req.Password) == "" && strings.TrimSpace(existing.Password) == "" {
 		return errors.New("password is required")
+	}
+	workMode := normalizeWorkMode(req.WorkMode)
+	if workMode != "frontend" && workMode != "backend" && workMode != "ops" {
+		return errors.New("workMode must be frontend, backend or ops")
 	}
 	return nil
 }
@@ -849,6 +856,10 @@ func normalizeAuthMethod(value string) string {
 		return "password"
 	}
 	return authMethod
+}
+
+func normalizeWorkMode(value string) string {
+	return model.NormalizeWorkMode(value)
 }
 
 func multipartUploadItems(form *multipart.Form) ([]sftpsvc.UploadItem, []string) {

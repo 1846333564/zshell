@@ -264,7 +264,13 @@ import { viewportContextMenuPosition } from '../utils/contextMenuPosition';
 
 const ROOT_PATH = '/';
 const HOME_PATH = '~';
+const WORK_MODE_START_PATHS = {
+  frontend: '/var',
+  backend: '/opt',
+  ops: ROOT_PATH,
+};
 const CLIPBOARD_KEY = 'zshell.remote-file.clipboard.v1';
+const DIRECTORY_CACHE_LIMIT = 200;
 const MIN_COLUMN_WIDTH = 70;
 const UPLOAD_CLOSE_DELAY_MS = 1200;
 const DEFAULT_FILE_OPEN_ACTION = 'textEdit';
@@ -272,6 +278,7 @@ const DEFAULT_EDITOR_WIDTH = 980;
 const DEFAULT_EDITOR_HEIGHT = 660;
 const MIN_EDITOR_TOP = 48;
 const CLIPBOARD_ACTIONS = new Set(['copy', 'move']);
+const directoryCache = new Map();
 
 const columns = [
   { key: 'name', label: '名称', width: 280 },
@@ -291,11 +298,16 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  workMode: {
+    type: String,
+    default: 'ops',
+  },
 });
 
 const entries = ref([]);
-const currentPath = ref(HOME_PATH);
+const currentPath = ref(initialPathForMode(props.workMode));
 const loading = ref(false);
+const refreshingCached = ref(false);
 const uploading = ref(false);
 const dragOver = ref(false);
 const errorMessage = ref('');
@@ -322,16 +334,14 @@ const uploadProgress = reactive({
 const editors = ref([]);
 const activeEditorId = ref('');
 const pathMeta = ref(
-  new Map([
-    [ROOT_PATH, { opened: false, collapsed: false }],
-    [HOME_PATH, { opened: false, collapsed: false }],
-  ]),
+  initialPathMeta(currentPath.value),
 );
 
 let resizeState = null;
 let editorDragState = null;
 let uploadCloseTimer = null;
 let editorZIndex = 900;
+let refreshSerial = 0;
 
 const contextMenu = reactive({
   visible: false,
@@ -343,18 +353,19 @@ const contextMenu = reactive({
 });
 
 watch(
-  () => props.connectionId,
-  async (value) => {
+  () => [props.connectionId, props.workMode],
+  async ([value, workMode]) => {
     clearSelection();
-    resetPathState();
+    const startPath = initialPathForMode(workMode);
+    resetPathState(startPath);
     if (!value) {
       entries.value = [];
-      currentPath.value = HOME_PATH;
+      currentPath.value = startPath;
       errorMessage.value = '';
       return;
     }
 
-    await refresh(HOME_PATH);
+    await refresh(startPath);
   },
   { immediate: true },
 );
@@ -373,8 +384,8 @@ const hasSelection = computed(() => selectedEntries.value.length > 0);
 const canPaste = computed(() => Boolean(props.connectionId && clipboard.value?.items?.length));
 const contextEntry = computed(() => contextMenu.entry);
 const contextCanOpenDirectory = computed(() => Boolean(contextMenu.entry?.isDir || contextMenu.targetKind === 'directory'));
-const contextPath = computed(() => contextMenu.entry?.path || contextMenu.targetPath || currentPath.value || HOME_PATH);
-const contextTargetDir = computed(() => (contextMenu.entry?.isDir ? contextMenu.entry.path : contextMenu.targetPath || currentPath.value || HOME_PATH));
+const contextPath = computed(() => contextMenu.entry?.path || contextMenu.targetPath || defaultDirectoryPath());
+const contextTargetDir = computed(() => (contextMenu.entry?.isDir ? contextMenu.entry.path : contextMenu.targetPath || defaultDirectoryPath()));
 const gridTemplateColumns = computed(() => columns.map((column) => `${columnWidths[column.key]}px`).join(' '));
 const activeEditor = computed(() => editors.value.find((item) => item.id === activeEditorId.value) || null);
 
@@ -384,6 +395,9 @@ const statusText = computed(() => {
   }
   if (uploading.value) {
     return `上传 ${uploadPercent.value}% · ${formatUploadSpeed(uploadProgress.speed)}`;
+  }
+  if (refreshingCached.value) {
+    return `缓存 ${orderedEntries.value.length} 项 · 正在更新`;
   }
   if (loading.value) {
     return '读取中...';
@@ -455,46 +469,137 @@ onBeforeUnmount(() => {
   stopEditorDrag();
 });
 
-async function refresh(targetPath = currentPath.value || HOME_PATH) {
+async function refresh(targetPath = currentPath.value || initialPathForMode(props.workMode), options = {}) {
   if (!props.connectionId) {
     return;
   }
 
-  const requestedPath = targetPath || HOME_PATH;
-  loading.value = true;
+  const requestedPath = targetPath || initialPathForMode(props.workMode);
+  const serial = (refreshSerial += 1);
+  const cached = options.useCache === false ? null : getCachedDirectory(props.connectionId, requestedPath);
+  if (cached) {
+    applyDirectoryListing(cached.path, cached.entries, cached.requestedPath || requestedPath);
+    loading.value = false;
+    refreshingCached.value = true;
+  } else {
+    loading.value = true;
+    refreshingCached.value = false;
+  }
   errorMessage.value = '';
 
   try {
     const result = await listRemoteFiles(props.connectionId, requestedPath);
+    if (serial !== refreshSerial) {
+      return;
+    }
     const resolvedPath = result.path || requestedPath;
-    currentPath.value = resolvedPath;
-    entries.value = Array.isArray(result.entries) ? result.entries : [];
-
-    rememberPath(ROOT_PATH);
-    if (requestedPath === HOME_PATH || requestedPath.startsWith('~/')) {
-      rememberPath(HOME_PATH, { opened: true });
+    const nextEntries = Array.isArray(result.entries) ? result.entries : [];
+    applyDirectoryListing(resolvedPath, nextEntries, requestedPath);
+    setCachedDirectory(props.connectionId, requestedPath, resolvedPath, nextEntries);
+    if (resolvedPath !== requestedPath) {
+      setCachedDirectory(props.connectionId, resolvedPath, resolvedPath, nextEntries);
     }
-    rememberParentChain(resolvedPath);
-    rememberPath(resolvedPath, { opened: true, collapsed: false });
-    for (const entry of entries.value) {
-      if (entry.isDir) {
-        rememberParentChain(entry.path);
-        rememberPath(entry.path, { opened: false });
-      }
-    }
-    keepExistingSelection();
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : '读取目录失败';
+    if (serial === refreshSerial) {
+      errorMessage.value = error instanceof Error ? error.message : '读取目录失败';
+    }
   } finally {
-    loading.value = false;
+    if (serial === refreshSerial) {
+      loading.value = false;
+      refreshingCached.value = false;
+    }
   }
 }
 
-function resetPathState() {
-  pathMeta.value = new Map([
+function applyDirectoryListing(resolvedPath, nextEntries, requestedPath = resolvedPath) {
+  currentPath.value = resolvedPath;
+  entries.value = cloneEntries(nextEntries);
+
+  rememberPath(ROOT_PATH);
+  rememberPath(HOME_PATH);
+  if (requestedPath === HOME_PATH || requestedPath.startsWith('~/')) {
+    rememberPath(HOME_PATH, { opened: true });
+  }
+  rememberParentChain(resolvedPath);
+  rememberPath(resolvedPath, { opened: true, collapsed: false });
+  for (const entry of entries.value) {
+    if (entry.isDir) {
+      rememberParentChain(entry.path);
+      rememberPath(entry.path, { opened: false });
+    }
+  }
+  keepExistingSelection();
+}
+
+function resetPathState(startPath = initialPathForMode(props.workMode)) {
+  pathMeta.value = initialPathMeta(startPath);
+}
+
+function initialPathForMode(workMode) {
+  return WORK_MODE_START_PATHS[normalizeWorkMode(workMode)] || ROOT_PATH;
+}
+
+function defaultDirectoryPath() {
+  return currentPath.value || initialPathForMode(props.workMode);
+}
+
+function normalizeWorkMode(workMode) {
+  return ['frontend', 'backend', 'ops'].includes(workMode) ? workMode : 'ops';
+}
+
+function initialPathMeta(startPath) {
+  const meta = new Map([
     [ROOT_PATH, { opened: false, collapsed: false }],
     [HOME_PATH, { opened: false, collapsed: false }],
   ]);
+  const normalized = normalizePath(startPath);
+  if (normalized && !meta.has(normalized)) {
+    meta.set(normalized, { opened: false, collapsed: false });
+  }
+  return meta;
+}
+
+function getCachedDirectory(connectionId, remotePath) {
+  const cached = directoryCache.get(directoryCacheKey(connectionId, remotePath));
+  if (!cached) {
+    return null;
+  }
+  return {
+    ...cached,
+    entries: cloneEntries(cached.entries),
+  };
+}
+
+function setCachedDirectory(connectionId, requestedPath, resolvedPath, nextEntries) {
+  const key = directoryCacheKey(connectionId, requestedPath);
+  if (!key) {
+    return;
+  }
+  if (directoryCache.has(key)) {
+    directoryCache.delete(key);
+  }
+  directoryCache.set(key, {
+    requestedPath,
+    path: resolvedPath,
+    entries: cloneEntries(nextEntries),
+    cachedAt: Date.now(),
+  });
+  while (directoryCache.size > DIRECTORY_CACHE_LIMIT) {
+    const oldestKey = directoryCache.keys().next().value;
+    directoryCache.delete(oldestKey);
+  }
+}
+
+function directoryCacheKey(connectionId, remotePath) {
+  const normalized = normalizePath(remotePath || initialPathForMode(props.workMode));
+  if (!connectionId || !normalized) {
+    return '';
+  }
+  return `${connectionId}\u0000${normalized}`;
+}
+
+function cloneEntries(value) {
+  return Array.isArray(value) ? value.map((entry) => ({ ...entry })) : [];
 }
 
 function rememberPath(itemPath, patch = {}) {
@@ -559,12 +664,12 @@ function onPathChange(event) {
 }
 
 function chooseFiles(targetPath = contextTargetDir.value) {
-  pendingUploadPath.value = targetPath || currentPath.value || HOME_PATH;
+  pendingUploadPath.value = targetPath || defaultDirectoryPath();
   fileInput.value?.click();
 }
 
 function chooseFolder(targetPath = contextTargetDir.value) {
-  pendingUploadPath.value = targetPath || currentPath.value || HOME_PATH;
+  pendingUploadPath.value = targetPath || defaultDirectoryPath();
   folderInput.value?.click();
 }
 
@@ -582,18 +687,18 @@ function chooseFolderFromMenu() {
 
 async function onFilePickerUpload(event) {
   const files = Array.from(event.target.files || []);
-  await uploadPickedFiles(files, [], pendingUploadPath.value || currentPath.value || HOME_PATH);
+  await uploadPickedFiles(files, [], pendingUploadPath.value || defaultDirectoryPath());
   event.target.value = '';
 }
 
 async function onFolderPickerUpload(event) {
   const files = Array.from(event.target.files || []);
   const directories = deriveDirectoriesFromFiles(files);
-  await uploadPickedFiles(files, directories, pendingUploadPath.value || currentPath.value || HOME_PATH);
+  await uploadPickedFiles(files, directories, pendingUploadPath.value || defaultDirectoryPath());
   event.target.value = '';
 }
 
-async function uploadPickedFiles(files, directories = [], targetPath = currentPath.value || HOME_PATH) {
+async function uploadPickedFiles(files, directories = [], targetPath = defaultDirectoryPath()) {
   const items = files.map((file) => ({
     file,
     relativePath: file.webkitRelativePath || file.name,
@@ -601,21 +706,21 @@ async function uploadPickedFiles(files, directories = [], targetPath = currentPa
   await uploadItems(items, directories, targetPath);
 }
 
-async function uploadItems(items, directories = [], targetPath = currentPath.value || HOME_PATH) {
+async function uploadItems(items, directories = [], targetPath = defaultDirectoryPath()) {
   if (!props.connectionId || (items.length === 0 && directories.length === 0)) {
     return;
   }
 
   uploading.value = true;
   errorMessage.value = '';
-  startUploadProgress(items, directories, targetPath || currentPath.value || HOME_PATH);
+  startUploadProgress(items, directories, targetPath || defaultDirectoryPath());
   let succeeded = false;
 
   try {
-    await uploadRemoteItems(props.connectionId, targetPath || currentPath.value || HOME_PATH, items, directories, onUploadProgress);
+    await uploadRemoteItems(props.connectionId, targetPath || defaultDirectoryPath(), items, directories, onUploadProgress);
     succeeded = true;
     markUploadComplete();
-    await refresh(currentPath.value || HOME_PATH);
+    await refresh(currentPath.value || initialPathForMode(props.workMode), { useCache: false });
   } catch (error) {
     const message = error instanceof Error ? error.message : '上传失败';
     errorMessage.value = message;
@@ -649,7 +754,7 @@ async function onDropUpload(event) {
   }
 
   const { files, directories } = await collectDroppedItems(event.dataTransfer);
-  await uploadItems(files, directories, currentPath.value || HOME_PATH);
+  await uploadItems(files, directories, defaultDirectoryPath());
 }
 
 async function download(itemPath, name) {
@@ -957,7 +1062,7 @@ async function saveEditor(editorWindow) {
     editorWindow.size = Number(file.size) || new Blob([content]).size;
     editorWindow.modTime = String(file.modTime || '');
     editorWindow.message = '已保存';
-    await refresh(currentPath.value || HOME_PATH);
+    await refresh(currentPath.value || initialPathForMode(props.workMode), { useCache: false });
     return true;
   } catch (error) {
     editorWindow.error = error instanceof Error ? error.message : '保存失败';
@@ -1092,7 +1197,7 @@ function openEntryContextMenu(event, entry, index) {
   }
   openContextMenu(event, {
     entry,
-    targetPath: entry.isDir ? entry.path : currentPath.value || HOME_PATH,
+    targetPath: entry.isDir ? entry.path : defaultDirectoryPath(),
     targetKind: entry.isDir ? 'directory' : 'file',
   });
 }
@@ -1102,14 +1207,14 @@ function openPathContextMenu(event, targetPath) {
 }
 
 function openBlankContextMenu(event) {
-  openContextMenu(event, { targetPath: currentPath.value || HOME_PATH, targetKind: 'blank' });
+  openContextMenu(event, { targetPath: defaultDirectoryPath(), targetKind: 'blank' });
 }
 
 function openContextMenu(event, target = {}) {
   const position = viewportContextMenuPosition(event, { width: 220, height: 470 });
   contextMenu.visible = true;
   contextMenu.entry = target.entry || null;
-  contextMenu.targetPath = target.targetPath || currentPath.value || HOME_PATH;
+  contextMenu.targetPath = target.targetPath || defaultDirectoryPath();
   contextMenu.targetKind = target.targetKind || 'blank';
   contextMenu.x = position.x;
   contextMenu.y = position.y;
@@ -1131,9 +1236,9 @@ function onGlobalPointerDown(event) {
 }
 
 async function refreshFromMenu() {
-  const target = contextMenu.targetPath || currentPath.value || HOME_PATH;
+  const target = contextMenu.targetPath || currentPath.value || initialPathForMode(props.workMode);
   hideContextMenu();
-  await refresh(target);
+  await refresh(target, { useCache: false });
 }
 
 function copySelection() {
@@ -1182,7 +1287,7 @@ async function deleteSelection() {
     );
     clearSelection();
     clearClipboardIfDeleted(selected);
-    await refresh(currentPath.value || HOME_PATH);
+    await refresh(currentPath.value || initialPathForMode(props.workMode), { useCache: false });
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '删除失败';
   } finally {
@@ -1237,7 +1342,7 @@ async function pasteClipboard(targetPath = contextTargetDir.value) {
     await transferRemoteItems({
       sourceConnectionId: pendingClipboard.sourceConnectionId,
       targetConnectionId: props.connectionId,
-      targetPath: targetPath || currentPath.value || HOME_PATH,
+      targetPath: targetPath || defaultDirectoryPath(),
       action: pendingClipboard.action,
       items: pendingClipboard.items,
     });
@@ -1245,7 +1350,7 @@ async function pasteClipboard(targetPath = contextTargetDir.value) {
       localStorage.removeItem(CLIPBOARD_KEY);
       clipboard.value = null;
     }
-    await refresh(currentPath.value || HOME_PATH);
+    await refresh(currentPath.value || initialPathForMode(props.workMode), { useCache: false });
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '粘贴失败';
   } finally {
@@ -1537,7 +1642,7 @@ function onKeydown(event) {
   }
   if (event.key === 'F5' && props.connectionId) {
     event.preventDefault();
-    refresh(currentPath.value || HOME_PATH);
+    refresh(currentPath.value || initialPathForMode(props.workMode), { useCache: false });
   }
 }
 
