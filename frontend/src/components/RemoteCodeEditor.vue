@@ -1,7 +1,7 @@
 <template>
   <div class="remote-monaco-shell" @mousedown.stop @click.stop @keydown.stop>
     <div v-show="!loadError" ref="editorMount" class="remote-monaco-mount"></div>
-    <div v-if="loading && !loadError" class="remote-editor-loading">加载 Monaco 编辑器...</div>
+    <div v-if="loading && !loadError" class="remote-editor-loading">{{ loadMessage }}</div>
     <textarea
       v-if="loadError"
       class="remote-editor-textarea remote-editor-fallback"
@@ -43,6 +43,7 @@ const emit = defineEmits(['update:modelValue', 'focus', 'save', 'state']);
 const editorMount = ref(null);
 const loading = ref(true);
 const loadError = ref('');
+const loadMessage = ref('准备加载编辑器...');
 
 let monacoApi = null;
 let monacoLoader = null;
@@ -108,15 +109,18 @@ watch(
 async function initializeEditor() {
   loading.value = true;
   loadError.value = '';
-  emit('state', { status: 'loading', message: '加载 Monaco...' });
+  updateLoadingState('准备加载编辑器...', 0.1, 1);
 
   try {
+    updateLoadingState('加载编辑器模块 1/4', 0.25, 1);
     monacoLoader = await import('../utils/monacoLoader');
+    updateLoadingState('加载 Monaco Worker 2/4', 0.5, 2);
     monacoApi = await monacoLoader.loadMonaco();
     if (disposed) {
       return;
     }
 
+    updateLoadingState('创建编辑器实例 3/4', 0.78, 3);
     await nextTick();
     if (!editorMount.value) {
       return;
@@ -166,6 +170,7 @@ async function initializeEditor() {
     resizeObserver = new ResizeObserver(() => editor?.layout());
     resizeObserver.observe(editorMount.value);
 
+    updateLoadingState('编辑器布局完成 4/4', 0.95, 4);
     loading.value = false;
     emit('state', { status: 'ready', message: 'Monaco 已就绪' });
     if (props.active) {
@@ -177,6 +182,17 @@ async function initializeEditor() {
     loadError.value = message;
     emit('state', { status: 'error', message });
   }
+}
+
+function updateLoadingState(message, progress, step) {
+  loadMessage.value = message;
+  emit('state', {
+    status: 'loading',
+    message,
+    progress,
+    step,
+    totalSteps: 4,
+  });
 }
 
 function updateModelLanguage() {

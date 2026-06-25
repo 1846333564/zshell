@@ -6,25 +6,66 @@
       <span>{{ session?.username || '-' }}</span>
     </div>
 
-    <div class="monitor-actions">
-      <button class="small-btn" :disabled="!session || loading" @click="refresh">刷新</button>
-      <span>{{ statusText }}</span>
-    </div>
-
     <div class="load-grid">
-      <button class="load-cell" :disabled="!session || loading" @click="refresh">
+      <div class="load-cell">
         <span>CPU</span>
         <strong>{{ percent(snapshot?.loads?.cpuPercent) }}</strong>
-      </button>
-      <button class="load-cell" :disabled="!session || loading" @click="refresh">
+      </div>
+      <div class="load-cell">
         <span>内存</span>
         <strong>{{ percent(snapshot?.loads?.memoryPercent) }}</strong>
-      </button>
-      <button class="load-cell" :disabled="!session || loading" @click="refresh">
+      </div>
+      <div class="load-cell">
         <span>硬盘</span>
         <strong>{{ percent(snapshot?.loads?.diskPercent) }}</strong>
-      </button>
+      </div>
     </div>
+
+    <section class="monitor-section server-section">
+      <div class="section-row">
+        <span>服务器</span>
+        <span>{{ loading ? '更新中' : serverClockText }}</span>
+      </div>
+      <div class="server-metric-grid">
+        <div v-for="item in serverMetrics" :key="item.label" class="server-metric">
+          <span>{{ item.label }}</span>
+          <strong>{{ item.value }}</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="monitor-section network-section">
+      <div class="section-row">
+        <span>网速</span>
+        <span>{{ networkPeakText }}</span>
+      </div>
+      <div class="network-chart">
+        <div class="network-scale">
+          <span>{{ speed(networkPeak) }}</span>
+          <span>{{ speed(networkMidpoint) }}</span>
+          <span>0</span>
+        </div>
+        <svg viewBox="0 0 100 48" preserveAspectRatio="none" aria-hidden="true">
+          <line x1="0" y1="46" x2="100" y2="46" class="network-axis"></line>
+          <line x1="0" y1="26" x2="100" y2="26" class="network-grid-line"></line>
+          <line x1="0" y1="6" x2="100" y2="6" class="network-grid-line"></line>
+          <polyline v-if="networkRxPoints" :points="networkRxPoints" class="network-line rx"></polyline>
+          <polyline v-if="networkTxPoints" :points="networkTxPoints" class="network-line tx"></polyline>
+        </svg>
+      </div>
+      <div class="network-legend">
+        <span><i class="rx"></i>下行 {{ speed(totalNetwork.rxBps) }}</span>
+        <span><i class="tx"></i>上行 {{ speed(totalNetwork.txBps) }}</span>
+      </div>
+      <div class="net-table">
+        <div v-for="net in networks" :key="net.name" class="net-row">
+          <strong>{{ net.name }}</strong>
+          <span>↓ {{ speed(net.rxBps) }}</span>
+          <span>↑ {{ speed(net.txBps) }}</span>
+        </div>
+        <div v-if="networks.length === 0" class="empty-tip compact">暂无数据</div>
+      </div>
+    </section>
 
     <section class="monitor-section">
       <div class="section-row">
@@ -46,21 +87,6 @@
           <span class="process-name">{{ proc.name }}</span>
         </div>
         <div v-if="processes.length === 0" class="empty-tip compact">暂无数据</div>
-      </div>
-    </section>
-
-    <section class="monitor-section">
-      <div class="section-row">
-        <span>网速</span>
-        <span>{{ updatedAt }}</span>
-      </div>
-      <div class="net-table">
-        <div v-for="net in networks" :key="net.name" class="net-row">
-          <strong>{{ net.name }}</strong>
-          <span>↓ {{ speed(net.rxBps) }}</span>
-          <span>↑ {{ speed(net.txBps) }}</span>
-        </div>
-        <div v-if="networks.length === 0" class="empty-tip compact">暂无数据</div>
       </div>
     </section>
 
@@ -86,6 +112,8 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { getMonitorSnapshot } from '../services/apiClient';
 
+const HISTORY_WINDOW_MS = 60 * 1000;
+
 const props = defineProps({
   session: {
     type: Object,
@@ -97,26 +125,47 @@ const snapshot = ref(null);
 const loading = ref(false);
 const errorMessage = ref('');
 const processSort = ref('memory');
+const networkHistory = ref([]);
 let timer = null;
 
 const processes = computed(() => snapshot.value?.processes || []);
 const networks = computed(() => snapshot.value?.networks || []);
 const partitions = computed(() => snapshot.value?.partitions || []);
-const updatedAt = computed(() => (snapshot.value?.updatedAt ? new Date(snapshot.value.updatedAt).toLocaleTimeString() : '-'));
-const statusText = computed(() => {
-  if (!props.session) {
-    return '未连接';
-  }
-  if (loading.value) {
-    return '刷新中';
-  }
-  return '5秒自动刷新';
+const system = computed(() => snapshot.value?.system || {});
+const hardware = computed(() => props.session?.hardware || {});
+const totalNetwork = computed(() => networks.value.find((net) => net.name === 'total') || { rxBps: 0, txBps: 0 });
+const networkPeak = computed(() =>
+  Math.max(
+    0,
+    ...networkHistory.value.flatMap((sample) => [Number(sample.rxBps) || 0, Number(sample.txBps) || 0]),
+  ),
+);
+const networkPeakText = computed(() => `峰值 ${speed(networkPeak.value)}`);
+const networkMidpoint = computed(() => networkPeak.value / 2);
+const networkRxPoints = computed(() => networkChartPoints('rxBps'));
+const networkTxPoints = computed(() => networkChartPoints('txBps'));
+const serverClockText = computed(() => formatServerTime(system.value.serverTime, system.value.timeZone));
+const serverMetrics = computed(() => {
+  const loads = snapshot.value?.loads || {};
+  return [
+    { label: '主机名', value: snapshot.value?.host?.name || props.session?.host || '-' },
+    { label: '服务器时间', value: serverClockText.value },
+    { label: '运行时间', value: uptime(system.value.uptimeSeconds) },
+    { label: '系统', value: system.value.os || '-' },
+    { label: '内核', value: system.value.kernel || '-' },
+    { label: 'CPU型号', value: hardware.value.cpuModel || '-' },
+    { label: '线程/核心', value: cpuShape(hardware.value) },
+    { label: '内存总量', value: size(Number(hardware.value.memoryTotalBytes) || Number(loads.memoryTotalMB) * 1024 * 1024) },
+    { label: '内存已用', value: memoryUsed(loads) },
+    { label: '硬件读取', value: shortTime(hardware.value.readAt) },
+  ];
 });
 
 watch(
   () => props.session?.connectionId,
   () => {
     snapshot.value = null;
+    networkHistory.value = [];
     errorMessage.value = '';
     restartTimer();
   },
@@ -133,7 +182,7 @@ function restartTimer() {
     return;
   }
   refresh();
-  timer = window.setInterval(refresh, 5000);
+  timer = window.setInterval(refresh, 1000);
 }
 
 function stopTimer() {
@@ -153,6 +202,7 @@ async function refresh() {
   try {
     const result = await getMonitorSnapshot(props.session.connectionId, processSort.value);
     snapshot.value = result.snapshot;
+    rememberNetworkSample(result.snapshot);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '监控刷新失败';
   } finally {
@@ -163,6 +213,36 @@ async function refresh() {
 function setSort(value) {
   processSort.value = value;
   refresh();
+}
+
+function rememberNetworkSample(nextSnapshot) {
+  const total = (nextSnapshot?.networks || []).find((net) => net.name === 'total');
+  const now = Date.now();
+  networkHistory.value = [
+    ...networkHistory.value,
+    {
+      at: now,
+      rxBps: Number(total?.rxBps) || 0,
+      txBps: Number(total?.txBps) || 0,
+    },
+  ].filter((sample) => now - sample.at <= HISTORY_WINDOW_MS);
+}
+
+function networkChartPoints(key) {
+  const samples = networkHistory.value;
+  if (samples.length === 0) {
+    return '';
+  }
+  const now = Date.now();
+  const start = now - HISTORY_WINDOW_MS;
+  const peak = networkPeak.value || 1;
+  return samples
+    .map((sample) => {
+      const x = Math.min(100, Math.max(0, ((sample.at - start) / HISTORY_WINDOW_MS) * 100));
+      const y = 46 - Math.min(1, Math.max(0, (Number(sample[key]) || 0) / peak)) * 40;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(' ');
 }
 
 function percent(value) {
@@ -193,5 +273,63 @@ function size(value) {
     return `${(value / (1024 * 1024)).toFixed(1)} MB`;
   }
   return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function uptime(value) {
+  const seconds = Number(value) || 0;
+  if (seconds <= 0) {
+    return '-';
+  }
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days > 0) {
+    return `${days}天 ${hours}小时`;
+  }
+  if (hours > 0) {
+    return `${hours}小时 ${minutes}分钟`;
+  }
+  return `${minutes}分钟`;
+}
+
+function cpuShape(value) {
+  const threads = Number(value?.cpuThreads) || 0;
+  const cores = Number(value?.cpuCores) || 0;
+  if (!threads && !cores) {
+    return '-';
+  }
+  if (!cores) {
+    return `${threads} 线程`;
+  }
+  return `${threads} 线程 / ${cores} 核`;
+}
+
+function memoryUsed(loads) {
+  const used = Number(loads?.memoryUsedMB) || 0;
+  const total = Number(loads?.memoryTotalMB) || 0;
+  if (!used && !total) {
+    return '-';
+  }
+  return `${size(used * 1024 * 1024)} / ${size(total * 1024 * 1024)}`;
+}
+
+function formatServerTime(value, timeZone) {
+  if (!value) {
+    return '-';
+  }
+  const date = new Date(value);
+  const text = Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+  return timeZone ? `${text} ${timeZone}` : text;
+}
+
+function shortTime(value) {
+  if (!value) {
+    return '-';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString();
 }
 </script>

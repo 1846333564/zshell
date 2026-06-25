@@ -1,0 +1,178 @@
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(2, 8, 14, 0.62);
+}
+
+.app-dialog {
+  width: min(560px, 100%);
+  max-height: min(720px, calc(100vh - 48px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid rgba(146, 202, 255, 0.28);
+  border-radius: 8px;
+  background: rgba(8, 20, 31, 0.98);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+}
+
+.dialog-head {
+  min-width: 0;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid rgba(146, 202, 255, 0.16);
+}
+
+.dialog-head div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.dialog-head strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.dialog-head span,
+.dialog-body {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.dialog-close {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(146, 202, 255, 0.2);
+  border-radius: 7px;
+  color: var(--muted);
+  background: rgba(10, 24, 37, 0.72);
+  cursor: pointer;
+}
+
+.dialog-close:hover:not(:disabled) {
+  color: var(--text);
+  border-color: rgba(100, 233, 186, 0.45);
+}
+
+.dialog-close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dialog-body {
+  min-height: 0;
+  padding: 14px;
+  overflow: auto;
+  line-height: 1.6;
+}
+
+.dialog-body p {
+  margin: 0;
+}
+
+.dialog-actions {
+  padding: 10px 14px 12px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid rgba(146, 202, 255, 0.16);
+}
+
+.update-progress-panel {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid rgba(146, 202, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(10, 24, 37, 0.62);
+}
+
+.update-progress-head,
+.update-progress-detail,
+.update-progress-log-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.update-progress-head strong {
+  min-width: 0;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.update-progress-head span,
+.update-progress-detail,
+.update-progress-log-row span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.update-progress-track {
+  margin: 9px 0;
+}
+
+.update-progress-detail span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.update-progress-log {
+  max-height: 170px;
+  margin-top: 10px;
+  display: grid;
+  gap: 5px;
+  overflow: auto;
+}
+
+.update-progress-log-row {
+  min-height: 24px;
+  border: 1px solid rgba(146, 202, 255, 0.12);
+  border-radius: 6px;
+  padding: 4px 7px;
+  background: rgba(6, 16, 26, 0.58);
+}
+
+.update-progress-log-row span {
+  flex: 0 0 auto;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.update-progress-log-row strong {
+  min-width: 0;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.release-notes {
+  margin: 12px 0 0;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+
+.dialog-error {
+  margin-top: 10px !important;
+  color: var(--danger);
+}

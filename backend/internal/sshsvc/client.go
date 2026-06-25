@@ -120,6 +120,23 @@ func ExecCommand(conn model.Connection, command string, timeout time.Duration) (
 	}
 	defer client.Close()
 
+	return runCommand(client, command)
+}
+
+func ExecCommandShared(conn model.Connection, command string, timeout time.Duration) (ExecResult, error) {
+	client, err := SharedClient(conn, timeout)
+	if err != nil {
+		return ExecResult{}, err
+	}
+
+	result, err := runCommand(client, command)
+	if err != nil {
+		DropSharedClient(conn)
+	}
+	return result, err
+}
+
+func runCommand(client *ssh.Client, command string) (ExecResult, error) {
 	session, err := client.NewSession()
 	if err != nil {
 		return ExecResult{}, fmt.Errorf("create session: %w", err)

@@ -6,7 +6,9 @@
 
 ## 重要文件
 
-- `service.go`
+- `service.go`：检查和应用更新主流程。
+- `release.go`、`download.go`、`checksum.go`、`replacement.go`：GitHub Release 获取、下载、校验和替换脚本。
+- `version.go`、`progress.go`、`types.go`：版本比较、进度事件和 DTO。
 
 ## 当前状态
 

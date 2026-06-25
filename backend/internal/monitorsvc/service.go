@@ -21,6 +21,7 @@ type Snapshot struct {
 	UpdatedAt  string       `json:"updatedAt"`
 	Host       HostInfo     `json:"host"`
 	Loads      LoadInfo     `json:"loads"`
+	System     SystemInfo   `json:"system"`
 	Processes  []ProcessRow `json:"processes"`
 	Networks   []NetworkRow `json:"networks"`
 	Partitions []Partition  `json:"partitions"`
@@ -41,6 +42,14 @@ type LoadInfo struct {
 	Cores         int     `json:"cores"`
 	MemoryUsedMB  int64   `json:"memoryUsedMB"`
 	MemoryTotalMB int64   `json:"memoryTotalMB"`
+}
+
+type SystemInfo struct {
+	ServerTime    string `json:"serverTime"`
+	TimeZone      string `json:"timeZone"`
+	OS            string `json:"os"`
+	Kernel        string `json:"kernel"`
+	UptimeSeconds int64  `json:"uptimeSeconds"`
 }
 
 type ProcessRow struct {
@@ -88,7 +97,7 @@ func (s *Service) Snapshot(conn model.Connection, processSort string, timeout ti
 	}
 
 	cmd := monitorCommand(sortFlag)
-	result, err := sshsvc.ExecCommand(conn, cmd, timeout)
+	result, err := sshsvc.ExecCommandShared(conn, cmd, timeout)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -118,6 +127,13 @@ read l1 l5 l15 rest < /proc/loadavg
 printf "LOAD\t%%s\t%%s\n" "$cores" "$l1"
 awk "/MemTotal:/ {t=\$2} /MemAvailable:/ {a=\$2} END {u=t-a; p=(t>0)?u*100/t:0; printf \"MEM\t%%d\t%%d\t%%.2f\n\", t, a, p}" /proc/meminfo
 df -P -B1 / 2>/dev/null | awk "NR==2 {gsub(/%%/,\"\",\$5); printf \"DISK\t%%s\n\", \$5}"
+server_time=$(date -Is 2>/dev/null)
+timezone=$(date +%%Z 2>/dev/null)
+uptime_seconds=$(awk "{printf \"%%.0f\", \$1}" /proc/uptime 2>/dev/null)
+os_pretty=$(awk -F= "/^PRETTY_NAME=/{gsub(/\"/,\"\",\$2); print \$2; exit}" /etc/os-release 2>/dev/null)
+kernel=$(uname -srmo 2>/dev/null)
+printf "TIME\t%%s\t%%s\n" "$server_time" "$timezone"
+printf "SYS\t%%s\t%%s\t%%s\n" "$os_pretty" "$kernel" "$uptime_seconds"
 ps -eo rss=,pcpu=,comm= --sort=%s 2>/dev/null | head -n 5 | awk "{printf \"PROC\t%%s\t%%s\t\", \$1, \$2; for(i=3;i<=NF;i++){printf (i==3?\"%%s\":\" %%s\"), \$i}; printf \"\n\"}"
 awk -F"[: ]+" "NR>2 && \$2 != \"lo\" {printf \"NET\t%%s\t%%s\t%%s\n\", \$2, \$3, \$11}" /proc/net/dev
 df -P -B1 2>/dev/null | awk "NR>1 {gsub(/%%/,\"\",\$5); printf \"FS\t%%s\t%%s\t%%s\t%%s\t%%s\n\", \$1, \$2, \$4, \$5, \$6}"'`, sortFlag)
@@ -161,6 +177,17 @@ func parseMonitorOutput(output string) (Snapshot, []rawNet, error) {
 		case "DISK":
 			if len(fields) >= 2 {
 				snapshot.Loads.DiskPercent = clampPercent(parseFloat(fields[1]))
+			}
+		case "TIME":
+			if len(fields) >= 3 {
+				snapshot.System.ServerTime = fields[1]
+				snapshot.System.TimeZone = fields[2]
+			}
+		case "SYS":
+			if len(fields) >= 4 {
+				snapshot.System.OS = fields[1]
+				snapshot.System.Kernel = fields[2]
+				snapshot.System.UptimeSeconds = parseInt(fields[3])
 			}
 		case "PROC":
 			if len(fields) >= 4 {

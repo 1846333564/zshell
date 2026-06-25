@@ -178,6 +178,78 @@ export function readRemoteTextFile(connectionId, path) {
   });
 }
 
+export async function readRemoteTextFileWithProgress(connectionId, path, onProgress) {
+  if (typeof onProgress !== 'function') {
+    return readRemoteTextFile(connectionId, path);
+  }
+
+  const response = await fetch(apiUrl('/api/sftp/file/read/stream'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ connectionId, path }),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || `read failed: ${response.status}`);
+  }
+  if (!response.body) {
+    return response.json();
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let file = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const event = parseJson(line.trim());
+      if (!event.type) {
+        continue;
+      }
+      if (event.type === 'progress') {
+        onProgress(event.progress || {});
+        continue;
+      }
+      if (event.type === 'error') {
+        throw new Error(event.error || '读取远程文件失败');
+      }
+      if (event.type === 'result') {
+        file = event.file || {};
+      }
+    }
+
+    if (done) {
+      break;
+    }
+  }
+
+  if (buffer.trim()) {
+    const event = parseJson(buffer.trim());
+    if (event.type === 'progress') {
+      onProgress(event.progress || {});
+    } else if (event.type === 'error') {
+      throw new Error(event.error || '读取远程文件失败');
+    } else if (event.type === 'result') {
+      file = event.file || {};
+    }
+  }
+
+  if (!file) {
+    throw new Error('远程文件读取没有返回内容');
+  }
+
+  return { file };
+}
+
 export function saveRemoteTextFile(connectionId, path, content) {
   return requestJson('/api/sftp/file/write', {
     method: 'PUT',

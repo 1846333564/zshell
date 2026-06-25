@@ -1,0 +1,340 @@
+:root {
+  --ui-scale: 1;
+  --ui-scale-inverse: 1;
+  --bg-1: #06131f;
+  --bg-2: #0f2a3f;
+  --bg-3: #1a4564;
+  --card: rgba(7, 20, 31, 0.78);
+  --line: rgba(151, 215, 255, 0.25);
+  --primary: #64e9ba;
+  --primary-2: #28c5ff;
+  --danger: #ff6f7d;
+  --text: #e6f2ff;
+  --muted: #9bb6cd;
+}
+
+* {
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 233, 186, 0.52) rgba(7, 20, 31, 0.46);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(7, 20, 31, 0.42);
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid rgba(7, 20, 31, 0.62);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(100, 233, 186, 0.78), rgba(40, 197, 255, 0.68));
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(140, 255, 216, 0.9), rgba(83, 212, 255, 0.82));
+}
+
+*::-webkit-scrollbar-corner {
+  background: rgba(7, 20, 31, 0.42);
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(1200px 700px at -5% -10%, rgba(41, 127, 187, 0.25), transparent 45%),
+    radial-gradient(950px 700px at 105% 0%, rgba(100, 233, 186, 0.14), transparent 50%),
+    radial-gradient(circle at 0% 0%, var(--bg-3) 0%, var(--bg-1) 52%, #050b12 100%);
+  color: var(--text);
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.app-shell {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 38px minmax(0, 1fr);
+  zoom: var(--ui-scale);
+}
+
+.app-topbar {
+  min-width: 0;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(146, 202, 255, 0.18);
+  background: linear-gradient(180deg, rgba(9, 24, 36, 0.96), rgba(6, 17, 27, 0.94));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  user-select: none;
+}
+
+.topbar-drag-region {
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  --wails-draggable: drag;
+}
+
+.brand-lockup {
+  height: 100%;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.brand-glyph {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(100, 233, 186, 0.48);
+  border-radius: 6px;
+  color: #08211e;
+  background: linear-gradient(135deg, var(--primary), var(--primary-2));
+  font-weight: 700;
+}
+
+.app-menu-strip {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  --wails-draggable: no-drag;
+}
+
+.app-menu-item {
+  position: relative;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.app-menu-button {
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 0 10px;
+  color: var(--muted);
+  background: transparent;
+  cursor: default;
+}
+
+.app-menu-item:hover .app-menu-button,
+.app-menu-item:focus-within .app-menu-button {
+  border-color: rgba(146, 202, 255, 0.24);
+  color: var(--text);
+  background: rgba(40, 197, 255, 0.12);
+}
+
+.app-menu-dropdown {
+  position: absolute;
+  top: 34px;
+  left: 0;
+  z-index: 40;
+  width: 164px;
+  display: none;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid rgba(146, 202, 255, 0.26);
+  border-radius: 8px;
+  background: rgba(8, 20, 31, 0.98);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.36);
+}
+
+.app-menu-item:hover .app-menu-dropdown,
+.app-menu-item:focus-within .app-menu-dropdown {
+  display: grid;
+}
+
+.app-menu-dropdown button {
+  width: 100%;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 9px;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+  cursor: pointer;
+}
+
+.app-menu-dropdown button:hover:not(:disabled) {
+  background: rgba(40, 197, 255, 0.16);
+}
+
+.app-menu-dropdown button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.window-controls {
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+  --wails-draggable: no-drag;
+}
+
+.window-controls button {
+  width: 46px;
+  border: none;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.window-controls button:hover {
+  color: var(--text);
+  background: rgba(146, 202, 255, 0.12);
+}
+
+.window-controls button.close:hover {
+  color: #fff;
+  background: #d83b3b;
+}
+
+.desktop-layout {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: 330px minmax(0, 1fr);
+  gap: 10px;
+  overflow: hidden;
+}
+
+.desktop-layout.home-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.monitor-sidebar {
+  min-height: 0;
+  padding: 10px;
+  overflow: hidden;
+}
+
+.main-workspace {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 48px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.connection-tabbar {
+  min-width: 0;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.connection-tab {
+  position: relative;
+  flex: 0 0 188px;
+  height: 34px;
+  border: 1px solid rgba(146, 202, 255, 0.22);
+  border-radius: 8px;
+  padding: 4px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  background: rgba(9, 23, 35, 0.7);
+  cursor: pointer;
+  text-align: center;
+}
+
+.connection-tab span {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab-title {
+  width: 100%;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.connection-tab.active {
+  border-color: rgba(100, 233, 186, 0.62);
+  background: rgba(24, 68, 77, 0.74);
+}
+
+.connection-tab.add {
+  flex: 0 0 42px;
+  padding: 0;
+  text-align: center;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.tab-close {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  line-height: 18px;
+}
+
+.tab-close:hover {
+  color: var(--text);
+  background: rgba(255, 111, 125, 0.24);
+}
+
+.connect-workspace {
+  min-height: 0;
+  padding: 14px;
+  overflow: auto;
+}
+
+.connect-columns {
+  width: min(100%, 960px);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 420px) minmax(0, 520px);
+  gap: 14px;
+  align-items: start;
+}
+
+.connect-form-pane {
+  min-width: 0;
+  align-self: start;
+  border: 1px solid rgba(146, 202, 255, 0.18);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(8, 19, 30, 0.54);
+}
+
+.history-panel.flat {
+  min-width: 0;
+  align-self: start;
+  height: fit-content;
+  margin: 0;
+  border-radius: 8px;
+}
