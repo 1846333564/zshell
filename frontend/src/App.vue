@@ -863,7 +863,9 @@ function clampUiScale(value) {
 }
 
 function applyUiScale() {
-  document.documentElement.style.setProperty('--ui-scale', uiScale.value.toFixed(2));
+  const scale = uiScale.value;
+  document.documentElement.style.setProperty('--ui-scale', scale.toFixed(2));
+  document.documentElement.style.setProperty('--ui-scale-inverse', (1 / scale).toFixed(6));
 }
 
 async function loadUIPreferences() {

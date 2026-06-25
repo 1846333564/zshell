@@ -3,6 +3,7 @@
 
 :root {
   --ui-scale: 1;
+  --ui-scale-inverse: 1;
   --bg-1: #06131f;
   --bg-2: #0f2a3f;
   --bg-3: #1a4564;
@@ -619,13 +620,17 @@ body,
   min-height: 0;
   flex: 1;
   display: flex;
+  overflow: hidden;
 }
 
 .terminal-instance {
   min-height: 0;
-  flex: 1;
+  flex: 0 0 calc(100% * var(--ui-scale));
+  width: calc(100% * var(--ui-scale));
+  height: calc(100% * var(--ui-scale));
   display: flex;
   flex-direction: column;
+  zoom: var(--ui-scale-inverse);
 }
 
 .terminal-meta {
