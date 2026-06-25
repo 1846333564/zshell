@@ -625,9 +625,9 @@ body,
 
 .terminal-instance {
   min-height: 0;
-  flex: 0 0 calc(100% * var(--ui-scale));
-  width: calc(100% * var(--ui-scale));
-  height: calc(100% * var(--ui-scale));
+  flex: 1 1 0;
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   zoom: var(--ui-scale-inverse);
