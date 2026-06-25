@@ -12,7 +12,7 @@ xterm.js 前端和 SSH PTY shell 之间的 WebSocket 桥接。
 
 ## 当前状态
 
-支持原始输入、输出流、resize 消息、协议层 ping/pong、服务端 WebSocket ping 帧、读取 deadline，以及 UTF-8 多字节边界处理。
+支持原始输入、输出流、resize 消息、协议层 ping/pong、服务端 WebSocket ping 帧、读取 deadline，以及 UTF-8 多字节边界处理。终端 WebSocket 建连失败、SSH 连接失败、输入/resize/远端流错误和 shell 异常退出都会写入日志系统；终端相关 goroutine 带 panic recovery。
 
 ## 已知工作
 

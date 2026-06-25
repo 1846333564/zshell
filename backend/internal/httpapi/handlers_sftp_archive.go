@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"zshell/backend/internal/logsvc"
 	"zshell/backend/internal/sftpsvc"
 )
 
@@ -30,6 +31,7 @@ func (s *Server) handleSFTPArchive(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", archiveName(remotePaths)))
 	if err := sftpsvc.ArchiveItems(conn, remotePaths, w, s.sshTimeout); err != nil {
+		logsvc.Error("SFTP 归档下载失败", err)
 		return
 	}
 }

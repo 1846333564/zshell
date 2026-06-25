@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"zshell/backend/internal/logsvc"
 	"zshell/backend/internal/updatesvc"
 )
 
@@ -65,6 +66,7 @@ func (s *Server) handleUpdateApplyStream(w http.ResponseWriter, r *http.Request)
 		})
 	})
 	if err != nil {
+		logsvc.Error("应用更新流式执行失败", err)
 		writeEvent(map[string]any{
 			"type":  "error",
 			"error": err.Error(),

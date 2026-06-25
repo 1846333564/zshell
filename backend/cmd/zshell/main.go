@@ -10,11 +10,20 @@ import (
 	"time"
 
 	"zshell/backend/internal/httpapi"
+	"zshell/backend/internal/logsvc"
 	"zshell/backend/internal/store"
 	"zshell/backend/internal/web"
 )
 
 func main() {
+	logger, err := logsvc.InitDefault()
+	if err != nil {
+		log.Printf("init log system failed: %v", err)
+	} else {
+		defer logger.Close()
+	}
+	defer logsvc.RecoverAndExit("HTTP-only 开发入口")
+
 	connectionStore := store.NewMemoryStore()
 	apiServer := httpapi.NewServer(connectionStore, 10*time.Second)
 
@@ -28,10 +37,9 @@ func main() {
 	}
 
 	server := &http.Server{
-		Handler:      httpapi.WithCORS(mux),
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Handler:           httpapi.WithCORS(mux),
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	url := fmt.Sprintf("http://127.0.0.1:%d", port)

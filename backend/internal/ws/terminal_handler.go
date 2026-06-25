@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"zshell/backend/internal/logsvc"
 	"zshell/backend/internal/sshsvc"
 	"zshell/backend/internal/store"
 
@@ -46,23 +47,27 @@ func NewTerminalHandler(connStore *store.MemoryStore, sshTimeout time.Duration) 
 func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	connectionID := strings.TrimSpace(r.URL.Query().Get("connectionId"))
 	if connectionID == "" {
+		logsvc.ErrorMessage("终端 WebSocket 建连失败", "missing connectionId")
 		http.Error(w, "missing connectionId", http.StatusBadRequest)
 		return
 	}
 
 	connCfg, ok := h.store.Get(connectionID)
 	if !ok {
+		logsvc.ErrorMessage("终端 WebSocket 建连失败", "connection not found")
 		http.Error(w, "connection not found", http.StatusNotFound)
 		return
 	}
 
 	wsConn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		logsvc.Error("终端 WebSocket upgrade 失败", err)
 		return
 	}
 
 	shell, err := sshsvc.NewInteractiveShell(connCfg, h.sshTimeout, 120, 32)
 	if err != nil {
+		logsvc.Error("终端 SSH 连接失败", err)
 		_ = writeWSError(wsConn, "SSH_CONNECT_FAILED", err.Error())
 		_ = wsConn.Close()
 		return
@@ -87,14 +92,22 @@ type terminalSession struct {
 }
 
 func (s *terminalSession) run() {
+	defer logsvc.Recover("终端 WebSocket 会话")
 	defer s.stop()
 
-	go s.writeLoop()
-	go s.readSSHStream(s.shell.Stdout(), false)
-	go s.readSSHStream(s.shell.Stderr(), true)
-	go s.watchShellExit()
+	s.goSafe("终端 WebSocket 写循环", s.writeLoop)
+	s.goSafe("终端 SSH stdout 读取", func() { s.readSSHStream(s.shell.Stdout(), false) })
+	s.goSafe("终端 SSH stderr 读取", func() { s.readSSHStream(s.shell.Stderr(), true) })
+	s.goSafe("终端 SSH shell 退出监控", s.watchShellExit)
 
 	s.readWSLoop()
+}
+
+func (s *terminalSession) goSafe(location string, fn func()) {
+	go func() {
+		defer logsvc.Recover(location)
+		fn()
+	}()
 }
 
 func (s *terminalSession) writeLoop() {
@@ -227,6 +240,7 @@ func (s *terminalSession) emitOutput(text string, isStderr bool) {
 }
 
 func (s *terminalSession) emitError(code string, message string) {
+	logsvc.ErrorMessage("终端 WebSocket "+code, message)
 	payload, _ := json.Marshal(ErrorData{Code: code, Message: message})
 	s.enqueue(Message{Type: "error", Data: payload})
 }

@@ -1,6 +1,9 @@
 package sftpsvc
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func TestNormalizeRemotePath(t *testing.T) {
 	cases := []struct {
@@ -55,6 +58,52 @@ func TestCleanRelativePath(t *testing.T) {
 				t.Fatalf("cleanRelativePath(%q)=%q, want %q", tc.input, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestPrepareUploadBatchDeduplicatesDirectories(t *testing.T) {
+	files := []UploadItem{
+		{FileName: "index.html", RelativePath: "app/index.html", Size: 10},
+		{FileName: "main.js", RelativePath: "app/assets/main.js", Size: 20},
+		{FileName: "logo.svg", RelativePath: `app\assets\logo.svg`, Size: 30},
+	}
+	directories := []string{"app", "app/assets", "app/assets"}
+
+	prepared, explicitDirs, dirsToCreate, err := prepareUploadBatch("/srv/www", files, directories)
+	if err != nil {
+		t.Fatalf("prepareUploadBatch returned error: %v", err)
+	}
+
+	wantPrepared := []string{
+		"/srv/www/app/index.html",
+		"/srv/www/app/assets/main.js",
+		"/srv/www/app/assets/logo.svg",
+	}
+	gotPrepared := make([]string, 0, len(prepared))
+	for _, item := range prepared {
+		gotPrepared = append(gotPrepared, item.remotePath)
+	}
+	if !slices.Equal(gotPrepared, wantPrepared) {
+		t.Fatalf("prepared remote paths=%v, want %v", gotPrepared, wantPrepared)
+	}
+
+	wantExplicitDirs := []string{"/srv/www/app", "/srv/www/app/assets", "/srv/www/app/assets"}
+	if !slices.Equal(explicitDirs, wantExplicitDirs) {
+		t.Fatalf("explicit dirs=%v, want %v", explicitDirs, wantExplicitDirs)
+	}
+
+	wantDirsToCreate := []string{"/srv/www/app", "/srv/www/app/assets"}
+	if !slices.Equal(dirsToCreate, wantDirsToCreate) {
+		t.Fatalf("dirs to create=%v, want %v", dirsToCreate, wantDirsToCreate)
+	}
+}
+
+func TestUploadWorkerCountIsBounded(t *testing.T) {
+	if got := uploadWorkerCount(3); got != 3 {
+		t.Fatalf("uploadWorkerCount(3)=%d, want 3", got)
+	}
+	if got := uploadWorkerCount(1000); got != uploadFileWorkerLimit {
+		t.Fatalf("uploadWorkerCount(1000)=%d, want %d", got, uploadFileWorkerLimit)
 	}
 }
 

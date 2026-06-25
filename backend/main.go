@@ -14,12 +14,23 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
+	"zshell/backend/internal/appinfo"
 	"zshell/backend/internal/httpapi"
+	"zshell/backend/internal/logsvc"
 	"zshell/backend/internal/store"
 	"zshell/backend/internal/web"
 )
 
 func main() {
+	logger, err := logsvc.InitDefault()
+	if err != nil {
+		log.Printf("init log system failed: %v", err)
+	} else {
+		defer logger.Close()
+	}
+	defer logsvc.RecoverAndExit("Wails 桌面入口")
+	log.Printf("zShell 启动，版本：%s", appinfo.Version)
+
 	connectionStore := store.NewMemoryStore()
 	apiServer := httpapi.NewServer(connectionStore, 10*time.Second)
 
@@ -32,13 +43,13 @@ func main() {
 	}
 
 	server := &http.Server{
-		Handler:      httpapi.WithCORS(mux),
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Handler:           httpapi.WithCORS(mux),
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	go func() {
+		defer logsvc.Recover("本地 API 服务 goroutine")
 		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 			log.Printf("server failed: %v", err)
 		}

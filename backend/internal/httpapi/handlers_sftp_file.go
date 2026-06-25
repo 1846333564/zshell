@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"zshell/backend/internal/logsvc"
 	"zshell/backend/internal/sftpsvc"
 )
 
@@ -85,6 +86,7 @@ func (s *Server) handleSFTPFileReadStream(w http.ResponseWriter, r *http.Request
 		})
 	})
 	if err != nil {
+		logsvc.Error("SFTP 远程文本流式读取失败", err)
 		writeEvent(map[string]any{
 			"type":  "error",
 			"error": err.Error(),

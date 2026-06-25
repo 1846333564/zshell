@@ -2,7 +2,10 @@ package httpapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+
+	"zshell/backend/internal/logsvc"
 )
 
 func decodeJSON(r *http.Request, out any) error {
@@ -20,11 +23,19 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {
+	logsvc.ErrorMessage(logsvc.Caller(2), message)
 	writeJSON(w, status, map[string]any{"error": message})
 }
 
 func WithCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if value := recover(); value != nil {
+				logsvc.Panic(fmt.Sprintf("HTTP %s %s", r.Method, r.URL.Path), value)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+			}
+		}()
+
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
