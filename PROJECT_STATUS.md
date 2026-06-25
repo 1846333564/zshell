@@ -2,7 +2,7 @@
 
 ## 项目概览
 
-zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/WebView2、Vue、xterm.js 和基于 SSH 的 SFTP。当前版本从 `VERSION` 文件读取，本次版本为 `0.2.2`，版本号从 `0.0.1` 起步。发布产物输出到项目根目录的 `release` 文件夹，命名格式为 `zshell.<版本号>.exe`；本地 `release` 历史包不会自动删除。
+zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/WebView2、Vue、xterm.js、Monaco Editor 和基于 SSH 的 SFTP。当前版本从 `VERSION` 文件读取，本次版本为 `0.3.1`，版本号从 `0.0.1` 起步。发布产物输出到项目根目录的 `release` 文件夹，命名格式为 `zshell.<版本号>.exe`；本地 `release` 历史包不会自动删除。
 
 ## 当前架构
 
@@ -14,7 +14,7 @@ zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/Web
 - `backend/internal/configstore` 使用 Windows DPAPI 在当前用户配置目录中加密保存连接配置。
 - `frontend/src/App.vue` 管理双栏桌面壳：左侧监控面板、右侧连接标签、终端和文件区域，并提供“关于 zShell”和“检查更新”弹窗。
 - `build-windows.ps1` 是 release 构建入口，会失败即停地执行 npm、Go 和 Wails 命令，读取 `VERSION`，并输出当前版本 exe 到 `release` 文件夹，不清理旧版本 exe。
-- `.github/workflows/release.yml` 用 GitHub Actions 在 tag 或手动触发时构建 Windows exe，并创建或更新 GitHub Release 资产；`.github/release-names.json` 可为指定版本配置 Release 标题，本次 `0.2.2` 标题为“修复终端选择异常”。
+- `.github/workflows/release.yml` 用 GitHub Actions 在 tag 或手动触发时构建 Windows exe，并创建或更新 GitHub Release 资产；`.github/release-names.json` 可为指定版本配置 Release 标题，本次 `0.3.1` 标题为“优化manaco，重构文件编辑器”。
 
 ## 已实现
 
@@ -30,11 +30,11 @@ zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/Web
 - 前端保存连接编辑，支持前端模式、后端模式、运维模式；文件管理器会按模式分别默认打开 `/var`、`/opt`、`/`。
 - 连接标签只显示连接名。
 - 文件管理器路径导航：固定根路径 `/`、解析后的 home 路径如 `/root`、树节点只显示 basename、目录树和右侧列表共享目录缓存与删除失效逻辑，目录树使用与右侧列表一致的分割线和选中条、路径输入支持全局已知目录的 Tab 唯一补全、路径历史可弹出查看，右侧居中折叠按钮、完整右键菜单动作、选中项删除确认和可调整文件列表列宽；已打开目录会先使用内存缓存秒开，再后台刷新真实目录内容，并按服务器 CPU 硬件线程数并发预加载当前已展开目录下一层子目录。
-- 文件管理器在线文本编辑：双击或右键打开普通浮动窗口，支持多个文件窗口同时编辑、拖动、最小化、最大化、`Ctrl+S` 保存，关闭脏内容时提示保存、保存并关闭、不保存并关闭或取消。
+- 文件管理器在线文本编辑：双击或右键打开普通浮动窗口，支持多个文件窗口同时编辑、拖动、最小化、最大化、`Ctrl+S` 保存，关闭脏内容时提示保存、保存并关闭、不保存并关闭或取消；编辑区已重构为 Monaco Editor，支持代码高亮、Tab 缩进、`Ctrl+F` 搜索、匹配高亮和替换能力。
 - 文件和终端右键菜单渲染在视口层，避免 UI 缩放造成坐标偏移；文件右键菜单点击其他位置会关闭。
 - 文件选择器或拖放上传，显示后端真实 SFTP 写入总进度、单文件进度、上传速度，上传面板可折叠并保留最近一次上传记录。
 - 终端聚焦时 `Ctrl +` / `Ctrl -` 调整字体并持久化到加密配置文件；非终端 UI 缩放也会持久化，终端区域会抵消全局 UI zoom，避免 xterm.js 鼠标选择坐标相对光标左上偏移；终端支持 `Ctrl+Shift+C` / `Ctrl+Shift+V` 剪贴板快捷键。
-- 已完成微型 VS Code 编辑器可行性调研，结论记录在 `docs/mini-vscode-feasibility.md`：后续推荐用 CodeMirror 6 动态加载增强在线文本编辑，暂不在本小版本引入 Monaco/CodeMirror 依赖，避免影响启动速度。
+- Monaco Editor 通过动态 import 和 Web Worker 懒加载接入，应用首屏不静态加载 Monaco；启动后会在空闲时后台预热，首次打开在线编辑器会复用同一个加载 Promise。
 - 交互式终端使用 SSH keepalive 和服务端 WebSocket ping/pong，降低空闲或后台断连概率。
 - Wails 窗口为无边框窗口，带自定义 zShell 顶栏、占位的 `配置管理` 和 `UI管理` 菜单、自定义窗口控制和应用风格滚动条。
 - 未连接首页不渲染左侧监控栏；连接失败信息限制在连接配置面板内换行，避免撑开首页两栏布局。

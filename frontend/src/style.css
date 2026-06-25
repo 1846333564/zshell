@@ -1338,6 +1338,37 @@ body,
   opacity: 0.72;
 }
 
+.remote-monaco-shell {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: rgba(3, 10, 20, 0.96);
+}
+
+.remote-monaco-mount {
+  position: absolute;
+  inset: 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+.remote-editor-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: rgba(3, 10, 20, 0.82);
+  font-size: 13px;
+}
+
+.remote-editor-fallback {
+  position: absolute;
+  inset: 0;
+}
+
 .editor-close-backdrop {
   position: absolute;
   inset: 0;

@@ -226,14 +226,16 @@
           </div>
         </header>
 
-        <textarea
+        <RemoteCodeEditor
           v-if="editorWindow.windowState !== 'minimized'"
-          class="remote-editor-textarea"
           v-model="editorWindow.content"
+          :path="editorWindow.path"
           :disabled="editorWindow.loading || editorWindow.saving"
-          :spellcheck="false"
+          :active="editorWindow.id === activeEditorId"
           @focus="activateEditor(editorWindow.id)"
-        ></textarea>
+          @save="saveEditor(editorWindow)"
+          @state="setEditorRuntimeState(editorWindow, $event)"
+        />
 
         <footer v-if="editorWindow.windowState !== 'minimized'" class="remote-editor-foot">
           <span>{{ editorMeta(editorWindow) }}</span>
@@ -297,6 +299,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import RemoteCodeEditor from './RemoteCodeEditor.vue';
 import {
   archiveRemoteItemsUrl,
   backendDownloadUrl,
@@ -1345,6 +1348,8 @@ function createEditorWindow(entry) {
     modTime: entry.modTime || '',
     error: '',
     message: '',
+    editorRuntimeState: 'loading',
+    editorRuntimeMessage: '加载 Monaco...',
     x: bounds.x,
     y: bounds.y,
     width: bounds.width,
@@ -1404,10 +1409,33 @@ function editorStatus(editorWindow) {
   if (editorWindow.saving) {
     return '保存中...';
   }
+  if (editorWindow.editorRuntimeState === 'loading') {
+    return editorWindow.editorRuntimeMessage || '加载 Monaco...';
+  }
+  if (editorWindow.editorRuntimeState === 'error') {
+    return '编辑器降级';
+  }
   if (editorDirty(editorWindow)) {
     return '未保存';
   }
   return editorWindow.message || '已保存';
+}
+
+function setEditorRuntimeState(editorWindow, state) {
+  if (!editorWindow) {
+    return;
+  }
+  const previousState = editorWindow.editorRuntimeState;
+  const previousMessage = editorWindow.editorRuntimeMessage;
+  editorWindow.editorRuntimeState = state?.status || '';
+  editorWindow.editorRuntimeMessage = state?.message || '';
+  if (state?.status === 'error') {
+    editorWindow.error = state.message || 'Monaco 加载失败，已切换到基础编辑模式';
+    return;
+  }
+  if (previousState === 'error' && editorWindow.error === previousMessage) {
+    editorWindow.error = '';
+  }
 }
 
 function editorMeta(editorWindow) {

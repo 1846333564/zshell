@@ -231,6 +231,7 @@ import {
   testConnection,
   updateConnectionConfig,
 } from './services/apiClient';
+import { cancelEditorWarmup, scheduleEditorWarmup } from './services/editorWarmup';
 
 const busy = ref(false);
 const configLoading = ref(false);
@@ -764,6 +765,7 @@ onMounted(() => {
   applyUiScale();
   loadUIPreferences();
   scheduleStartupUpdateCheck();
+  scheduleEditorWarmup();
   window.addEventListener('keydown', handleGlobalKeydown, true);
 });
 
@@ -949,6 +951,7 @@ onBeforeUnmount(() => {
   if (startupUpdateTimer) {
     window.clearTimeout(startupUpdateTimer);
   }
+  cancelEditorWarmup();
   if (saveUiScaleTimer) {
     window.clearTimeout(saveUiScaleTimer);
   }

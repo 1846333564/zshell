@@ -1,6 +1,6 @@
 package appinfo
 
-var Version = "0.2.2"
+var Version = "0.3.1"
 
 const (
 	ProductName     = "zShell"
