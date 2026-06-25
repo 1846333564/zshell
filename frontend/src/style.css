@@ -807,13 +807,13 @@ body,
   position: relative;
   flex: 1;
   min-height: 0;
+  padding: 8px;
   border-radius: 10px;
   overflow: hidden;
   border: 1px solid rgba(147, 212, 255, 0.2);
 }
 
 .xterm {
-  padding: 8px;
   height: 100%;
   font-family: 'JetBrains Mono', monospace;
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,15 @@ type ExecResult struct {
 	Stderr   string `json:"stderr"`
 	ExitCode int    `json:"exitCode"`
 }
+
+const hardwareInfoCommand = `threads="$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || grep -c '^processor' /proc/cpuinfo 2>/dev/null || echo 1)"
+cores="$(lscpu 2>/dev/null | awk -F: '/^Core\(s\) per socket/{gsub(/^[ \t]+|[ \t]+$/, "", $2); cores=$2} /^Socket\(s\)/{gsub(/^[ \t]+|[ \t]+$/, "", $2); sockets=$2} END{if (cores != "" && sockets != "") print cores * sockets}')"
+model="$(awk -F: '/model name|Hardware|Processor/{gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2; exit}' /proc/cpuinfo 2>/dev/null)"
+memkb="$(awk '/MemTotal/{print $2; exit}' /proc/meminfo 2>/dev/null)"
+printf 'cpu_threads=%s\n' "$threads"
+printf 'cpu_cores=%s\n' "$cores"
+printf 'cpu_model=%s\n' "$model"
+printf 'memory_kb=%s\n' "$memkb"`
 
 var sharedClients sync.Map
 
@@ -80,6 +90,29 @@ func TestConnection(conn model.Connection, timeout time.Duration) error {
 	return nil
 }
 
+func ReadHardwareInfo(conn model.Connection, timeout time.Duration) (model.HardwareInfo, error) {
+	result, err := ExecCommand(conn, hardwareInfoCommand, timeout)
+	if err != nil {
+		return model.HardwareInfo{}, err
+	}
+	if result.ExitCode != 0 {
+		return model.HardwareInfo{}, fmt.Errorf("read hardware info failed: %s", strings.TrimSpace(result.Stderr))
+	}
+
+	values := parseKeyValueLines(result.Stdout)
+	hardware := model.HardwareInfo{
+		CPUThreads:       parsePositiveInt(values["cpu_threads"]),
+		CPUCores:         parsePositiveInt(values["cpu_cores"]),
+		CPUModel:         strings.TrimSpace(values["cpu_model"]),
+		MemoryTotalBytes: int64(parsePositiveInt(values["memory_kb"])) * 1024,
+		ReadAt:           time.Now().UTC().Format(time.RFC3339),
+	}
+	if hardware.CPUThreads <= 0 {
+		hardware.CPUThreads = 1
+	}
+	return hardware, nil
+}
+
 func ExecCommand(conn model.Connection, command string, timeout time.Duration) (ExecResult, error) {
 	client, err := dial(conn, timeout)
 	if err != nil {
@@ -117,6 +150,26 @@ func ExecCommand(conn model.Connection, command string, timeout time.Duration) (
 		Stderr:   string(bytes.ToValidUTF8(stderrBuf.Bytes(), []byte("?"))),
 		ExitCode: exitCode,
 	}, nil
+}
+
+func parseKeyValueLines(value string) map[string]string {
+	result := make(map[string]string)
+	for _, line := range strings.Split(value, "\n") {
+		key, raw, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		result[strings.TrimSpace(key)] = strings.TrimSpace(raw)
+	}
+	return result
+}
+
+func parsePositiveInt(value string) int {
+	number, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || number < 0 {
+		return 0
+	}
+	return number
 }
 
 func sshClientAlive(client *ssh.Client) bool {

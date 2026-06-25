@@ -277,7 +277,7 @@
           <button :disabled="loading" @click="downloadContextEntry">下载</button>
         </template>
         <button :disabled="!hasSelection || loading" @click="downloadSelectionFromMenu">下载选中</button>
-        <button class="danger" :disabled="!hasSelection || loading" @click="deleteSelectionFromMenu">删除</button>
+        <button class="danger" :disabled="!canDeleteFromMenu || loading" @click="deleteFromMenu">删除</button>
 
         <div class="context-menu-separator"></div>
         <button :disabled="!connectionId || uploading" @click="chooseFilesFromMenu">上传文件到此处...</button>
@@ -319,7 +319,8 @@ const WORK_MODE_START_PATHS = {
   ops: ROOT_PATH,
 };
 const CLIPBOARD_KEY = 'zshell.remote-file.clipboard.v1';
-const DIRECTORY_CACHE_LIMIT = 200;
+const DIRECTORY_CACHE_LIMIT = 1200;
+const MAX_PRELOAD_CONCURRENCY = 32;
 const MIN_COLUMN_WIDTH = 70;
 const UPLOAD_CLOSE_DELAY_MS = 1200;
 const DEFAULT_FILE_OPEN_ACTION = 'textEdit';
@@ -350,6 +351,10 @@ const props = defineProps({
   workMode: {
     type: String,
     default: 'ops',
+  },
+  hardware: {
+    type: Object,
+    default: () => ({}),
   },
 });
 
@@ -396,6 +401,8 @@ let editorDragState = null;
 let uploadCloseTimer = null;
 let editorZIndex = 900;
 let refreshSerial = 0;
+let preloadSerial = 0;
+let preloadController = null;
 
 const contextMenu = reactive({
   visible: false,
@@ -415,6 +422,7 @@ watch(
   () => [props.connectionId, props.workMode],
   async ([value, workMode]) => {
     clearSelection();
+    cancelDirectoryPreload();
     const startPath = initialPathForMode(workMode);
     resetPathState(startPath);
     if (!value) {
@@ -452,8 +460,20 @@ const contextEntry = computed(() => contextMenu.entry);
 const contextCanOpenDirectory = computed(() => Boolean(contextMenu.entry?.isDir || contextMenu.targetKind === 'directory'));
 const contextPath = computed(() => contextMenu.entry?.path || contextMenu.targetPath || defaultDirectoryPath());
 const contextTargetDir = computed(() => (contextMenu.entry?.isDir ? contextMenu.entry.path : contextMenu.targetPath || defaultDirectoryPath()));
+const contextDeleteItem = computed(() => {
+  if (hasSelection.value || contextMenu.entry) {
+    return null;
+  }
+  const targetPath = normalizePath(contextMenu.targetPath);
+  if (contextMenu.targetKind !== 'directory' || !isDeletableRemotePath(targetPath)) {
+    return null;
+  }
+  return { path: targetPath, isDir: true };
+});
+const canDeleteFromMenu = computed(() => hasSelection.value || Boolean(contextDeleteItem.value));
 const gridTemplateColumns = computed(() => columns.map((column) => `${columnWidths[column.key]}px`).join(' '));
 const activeEditor = computed(() => editors.value.find((item) => item.id === activeEditorId.value) || null);
+const preloadConcurrency = computed(() => Math.min(MAX_PRELOAD_CONCURRENCY, Math.max(1, Math.round(Number(props.hardware?.cpuThreads) || 1))));
 
 const statusText = computed(() => {
   if (!props.connectionId) {
@@ -536,6 +556,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown);
   window.removeEventListener('pointerdown', onGlobalPointerDown, true);
   clearUploadCloseTimer();
+  cancelDirectoryPreload();
   stopColumnResize();
   stopEditorDrag();
 });
@@ -545,6 +566,9 @@ async function refresh(targetPath = currentPath.value || initialPathForMode(prop
     return;
   }
 
+  if (options.cancelPreload !== false) {
+    cancelDirectoryPreload();
+  }
   const requestedPath = targetPath || initialPathForMode(props.workMode);
   const serial = (refreshSerial += 1);
   const cached = options.useCache === false ? null : getCachedDirectory(props.connectionId, requestedPath);
@@ -566,10 +590,11 @@ async function refresh(targetPath = currentPath.value || initialPathForMode(prop
     const resolvedPath = result.path || requestedPath;
     const nextEntries = Array.isArray(result.entries) ? result.entries : [];
     applyDirectoryListing(resolvedPath, nextEntries, requestedPath);
-    setCachedDirectory(props.connectionId, requestedPath, resolvedPath, nextEntries);
+    setCachedDirectory(props.connectionId, requestedPath, resolvedPath, nextEntries, { rememberTree: true });
     if (resolvedPath !== requestedPath) {
-      setCachedDirectory(props.connectionId, resolvedPath, resolvedPath, nextEntries);
+      setCachedDirectory(props.connectionId, resolvedPath, resolvedPath, nextEntries, { rememberTree: true });
     }
+    scheduleDirectoryPreload();
   } catch (error) {
     if (serial === refreshSerial) {
       errorMessage.value = error instanceof Error ? error.message : '读取目录失败';
@@ -592,14 +617,7 @@ function applyDirectoryListing(resolvedPath, nextEntries, requestedPath = resolv
   if (requestedPath === HOME_PATH || requestedPath.startsWith('~/')) {
     rememberPath(HOME_PATH, { opened: true });
   }
-  rememberParentChain(resolvedPath);
-  rememberPath(resolvedPath, { opened: true, collapsed: false });
-  for (const entry of entries.value) {
-    if (entry.isDir) {
-      rememberParentChain(entry.path);
-      rememberPath(entry.path, { opened: false });
-    }
-  }
+  rememberDirectoryTree(resolvedPath, entries.value);
   keepExistingSelection();
 }
 
@@ -644,20 +662,25 @@ function getCachedDirectory(connectionId, remotePath) {
   };
 }
 
-function setCachedDirectory(connectionId, requestedPath, resolvedPath, nextEntries) {
+function setCachedDirectory(connectionId, requestedPath, resolvedPath, nextEntries, options = {}) {
   const key = directoryCacheKey(connectionId, requestedPath);
   if (!key) {
     return;
   }
+  const resolved = normalizePath(resolvedPath || requestedPath);
+  const entriesForCache = cloneEntries(nextEntries);
   if (directoryCache.has(key)) {
     directoryCache.delete(key);
   }
   directoryCache.set(key, {
     requestedPath,
-    path: resolvedPath,
-    entries: cloneEntries(nextEntries),
+    path: resolved,
+    entries: entriesForCache,
     cachedAt: Date.now(),
   });
+  if (options.rememberTree !== false) {
+    rememberDirectoryTree(resolved, entriesForCache);
+  }
   while (directoryCache.size > DIRECTORY_CACHE_LIMIT) {
     const oldestKey = directoryCache.keys().next().value;
     directoryCache.delete(oldestKey);
@@ -674,6 +697,97 @@ function directoryCacheKey(connectionId, remotePath) {
 
 function cloneEntries(value) {
   return Array.isArray(value) ? value.map((entry) => ({ ...entry })) : [];
+}
+
+function rememberDirectoryTree(resolvedPath, nextEntries) {
+  rememberParentChain(resolvedPath);
+  rememberPath(resolvedPath, { opened: true, collapsed: false });
+  for (const entry of nextEntries) {
+    if (entry.isDir) {
+      rememberParentChain(entry.path);
+      rememberPath(entry.path, { opened: false });
+    }
+  }
+}
+
+function scheduleDirectoryPreload() {
+  cancelDirectoryPreload();
+  const targets = directoryPreloadTargets();
+  if (targets.length === 0) {
+    return;
+  }
+
+  const serial = (preloadSerial += 1);
+  const controller = new AbortController();
+  preloadController = controller;
+  const queue = [...targets];
+  const workerCount = Math.min(preloadConcurrency.value, queue.length);
+
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (queue.length > 0 && preloadSerial === serial && !controller.signal.aborted) {
+      const targetPath = queue.shift();
+      if (!targetPath || getCachedDirectory(props.connectionId, targetPath)) {
+        continue;
+      }
+      try {
+        const result = await listRemoteFiles(props.connectionId, targetPath, { signal: controller.signal });
+        if (preloadSerial !== serial || controller.signal.aborted) {
+          return;
+        }
+        const resolvedPath = result.path || targetPath;
+        const nextEntries = Array.isArray(result.entries) ? result.entries : [];
+        setCachedDirectory(props.connectionId, targetPath, resolvedPath, nextEntries, { rememberTree: false });
+        if (resolvedPath !== targetPath) {
+          setCachedDirectory(props.connectionId, resolvedPath, resolvedPath, nextEntries, { rememberTree: false });
+        }
+      } catch (error) {
+        if (error?.name === 'AbortError' || controller.signal.aborted) {
+          return;
+        }
+      }
+    }
+  });
+
+  Promise.allSettled(workers).finally(() => {
+    if (preloadSerial === serial) {
+      preloadController = null;
+    }
+  });
+}
+
+function cancelDirectoryPreload() {
+  preloadSerial += 1;
+  if (preloadController) {
+    preloadController.abort();
+    preloadController = null;
+  }
+}
+
+function directoryPreloadTargets() {
+  const targets = [];
+  const seen = new Set();
+  for (const itemPath of Array.from(pathMeta.value.keys()).sort(comparePaths)) {
+    const meta = pathMeta.value.get(itemPath) || {};
+    if (!isPathVisible(itemPath) || (!meta.opened && itemPath !== currentPath.value)) {
+      continue;
+    }
+    const cached = getCachedDirectory(props.connectionId, itemPath);
+    if (!cached) {
+      continue;
+    }
+    for (const entry of cached.entries) {
+      if (!entry.isDir) {
+        continue;
+      }
+      const normalized = normalizePath(entry.path);
+      if (!normalized || seen.has(normalized) || getCachedDirectory(props.connectionId, normalized)) {
+        continue;
+      }
+      seen.add(normalized);
+      targets.push(normalized);
+    }
+  }
+  return targets;
 }
 
 function rememberPath(itemPath, patch = {}) {
@@ -786,7 +900,7 @@ function commitPathDraft(event) {
   refresh(value);
 }
 
-function completePathDraft() {
+async function completePathDraft() {
   if (!props.connectionId) {
     return;
   }
@@ -794,21 +908,69 @@ function completePathDraft() {
   if (!prefix) {
     return;
   }
+  await ensureCompletionCaches(prefix);
   const matches = pathCompletionMatches(prefix);
   if (matches.length === 1) {
     pathDraft.value = matches[0];
   }
 }
 
+async function ensureCompletionCaches(prefix) {
+  const prefixes = [prefix];
+  const relativePrefix = currentRelativeCompletionPrefix(prefix);
+  if (relativePrefix && relativePrefix !== prefix) {
+    prefixes.push(relativePrefix);
+  }
+  for (const item of prefixes) {
+    const parent = completionParentPath(item);
+    if (!parent || getCachedDirectory(props.connectionId, parent)) {
+      continue;
+    }
+    try {
+      const result = await listRemoteFiles(props.connectionId, parent);
+      const resolvedPath = result.path || parent;
+      const nextEntries = Array.isArray(result.entries) ? result.entries : [];
+      setCachedDirectory(props.connectionId, parent, resolvedPath, nextEntries, { rememberTree: false });
+      if (resolvedPath !== parent) {
+        setCachedDirectory(props.connectionId, resolvedPath, resolvedPath, nextEntries, { rememberTree: false });
+      }
+    } catch {
+      // Completion should remain silent when a parent cannot be read.
+    }
+  }
+}
+
 function pathCompletionMatches(prefix) {
-  const candidates = new Set([
-    ROOT_PATH,
-    HOME_PATH,
-    ...Object.values(WORK_MODE_START_PATHS),
-    ...pathHistory.value,
-    ...Array.from(pathMeta.value.keys()),
-    ...entries.value.filter((entry) => entry.isDir).map((entry) => entry.path),
-  ]);
+  const candidates = pathCompletionCandidates();
+  let matches = completionMatchesForPrefix(prefix, candidates);
+  if (matches.length === 0) {
+    const relativePrefix = currentRelativeCompletionPrefix(prefix);
+    if (relativePrefix && relativePrefix !== prefix) {
+      matches = completionMatchesForPrefix(relativePrefix, candidates);
+    }
+  }
+  return matches;
+}
+
+function pathCompletionCandidates() {
+  const candidates = new Set([ROOT_PATH, HOME_PATH, ...Object.values(WORK_MODE_START_PATHS), ...pathHistory.value, ...Array.from(pathMeta.value.keys())]);
+  for (const entry of entries.value) {
+    if (entry.isDir) {
+      candidates.add(entry.path);
+    }
+  }
+  for (const cached of cachedDirectoriesForConnection(props.connectionId)) {
+    candidates.add(cached.path);
+    for (const entry of cached.entries) {
+      if (entry.isDir) {
+        candidates.add(entry.path);
+      }
+    }
+  }
+  return candidates;
+}
+
+function completionMatchesForPrefix(prefix, candidates) {
   const matches = new Set();
   for (const candidate of candidates) {
     const normalized = normalizePath(candidate);
@@ -818,6 +980,36 @@ function pathCompletionMatches(prefix) {
     }
   }
   return Array.from(matches).sort(comparePaths);
+}
+
+function currentRelativeCompletionPrefix(prefix) {
+  const current = normalizePath(currentPath.value);
+  if (!current || current === ROOT_PATH || current === HOME_PATH) {
+    return '';
+  }
+  const raw = String(prefix || '').trim();
+  if (!raw) {
+    return '';
+  }
+  const clean = raw.startsWith(ROOT_PATH) ? raw.slice(1) : raw;
+  if (!clean || clean.includes('/')) {
+    return '';
+  }
+  return normalizePath(`${current}/${clean}`);
+}
+
+function completionParentPath(prefix) {
+  const normalized = normalizePath(prefix);
+  if (!normalized) {
+    return '';
+  }
+  if (normalized === ROOT_PATH || normalized === HOME_PATH) {
+    return '';
+  }
+  if (normalized.endsWith('/') && normalized !== ROOT_PATH) {
+    return normalizePath(normalized.slice(0, -1)) || ROOT_PATH;
+  }
+  return parentPath(normalized) || ROOT_PATH;
 }
 
 function completionTarget(prefix, candidate) {
@@ -830,6 +1022,113 @@ function completionTarget(prefix, candidate) {
     return candidate;
   }
   return candidate.slice(0, prefix.length + slashIndex);
+}
+
+function cachedDirectoriesForConnection(connectionId) {
+  if (!connectionId) {
+    return [];
+  }
+  const prefix = `${connectionId}\u0000`;
+  const result = [];
+  for (const [key, cached] of directoryCache.entries()) {
+    if (key.startsWith(prefix)) {
+      result.push({
+        ...cached,
+        entries: cloneEntries(cached.entries),
+      });
+    }
+  }
+  return result;
+}
+
+function syncDirectoryCacheAfterDelete(items) {
+  const deleted = items
+    .map((item) => ({
+      path: normalizePath(item.path),
+      isDir: Boolean(item.isDir),
+    }))
+    .filter((item) => item.path);
+  if (deleted.length === 0) {
+    return;
+  }
+
+  const prefix = `${props.connectionId}\u0000`;
+  for (const [key, cached] of Array.from(directoryCache.entries())) {
+    if (!key.startsWith(prefix)) {
+      continue;
+    }
+    const cachedPath = normalizePath(cached.path || cached.requestedPath);
+    if (deleted.some((item) => item.isDir && isSameOrChildPath(cachedPath, item.path))) {
+      directoryCache.delete(key);
+      continue;
+    }
+    const nextEntries = cloneEntries(cached.entries).filter((entry) => !deleted.some((item) => entryMatchesDeletedItem(entry, item)));
+    if (nextEntries.length !== cached.entries.length) {
+      directoryCache.set(key, {
+        ...cached,
+        entries: nextEntries,
+        cachedAt: Date.now(),
+      });
+    }
+  }
+
+  entries.value = entries.value.filter((entry) => !deleted.some((item) => entryMatchesDeletedItem(entry, item)));
+  removeDeletedPathMeta(deleted);
+}
+
+function invalidateDirectoryCache(remotePath) {
+  const normalized = normalizePath(remotePath);
+  if (!normalized || !props.connectionId) {
+    return;
+  }
+  const keys = [directoryCacheKey(props.connectionId, normalized)];
+  for (const key of keys) {
+    if (key) {
+      directoryCache.delete(key);
+    }
+  }
+}
+
+function entryMatchesDeletedItem(entry, item) {
+  const entryPath = normalizePath(entry.path);
+  if (!entryPath || !item.path) {
+    return false;
+  }
+  return item.isDir ? isSameOrChildPath(entryPath, item.path) : entryPath === item.path;
+}
+
+function removeDeletedPathMeta(deletedItems) {
+  const next = new Map(pathMeta.value);
+  for (const key of Array.from(next.keys())) {
+    if (deletedItems.some((item) => (item.isDir ? isSameOrChildPath(key, item.path) : key === item.path))) {
+      next.delete(key);
+    }
+  }
+  pathMeta.value = next;
+}
+
+function pathAfterDeletingItems(items) {
+  const current = normalizePath(currentPath.value) || initialPathForMode(props.workMode);
+  for (const item of items) {
+    const deletedPath = normalizePath(item.path);
+    if (item.isDir && isSameOrChildPath(current, deletedPath)) {
+      return nearestExistingParentAfterDelete(deletedPath, items);
+    }
+  }
+  return current;
+}
+
+function nearestExistingParentAfterDelete(deletedPath, deletedItems) {
+  let candidate = parentPath(deletedPath) || ROOT_PATH;
+  while (candidate && deletedItems.some((item) => item.isDir && isSameOrChildPath(candidate, normalizePath(item.path)))) {
+    candidate = parentPath(candidate);
+  }
+  return candidate || ROOT_PATH;
+}
+
+function isDeletableRemotePath(itemPath) {
+  const normalized = normalizePath(itemPath);
+  return Boolean(normalized && normalized !== ROOT_PATH && normalized !== HOME_PATH);
 }
 
 function chooseFiles(targetPath = contextTargetDir.value) {
@@ -889,6 +1188,7 @@ async function uploadItems(items, directories = [], targetPath = defaultDirector
     await uploadRemoteItems(props.connectionId, targetPath || defaultDirectoryPath(), items, directories, onUploadProgress);
     succeeded = true;
     markUploadComplete();
+    invalidateDirectoryCache(targetPath || defaultDirectoryPath());
     await refresh(currentPath.value || initialPathForMode(props.workMode), { useCache: false });
   } catch (error) {
     const message = error instanceof Error ? error.message : '上传失败';
@@ -1231,6 +1531,7 @@ async function saveEditor(editorWindow) {
     editorWindow.size = Number(file.size) || new Blob([content]).size;
     editorWindow.modTime = String(file.modTime || '');
     editorWindow.message = '已保存';
+    invalidateDirectoryCache(parentPath(editorWindow.path) || currentPath.value || initialPathForMode(props.workMode));
     await refresh(currentPath.value || initialPathForMode(props.workMode), { useCache: false });
     return true;
   } catch (error) {
@@ -1438,9 +1739,16 @@ function cutSelectionFromMenu() {
   cutSelection();
 }
 
-async function deleteSelectionFromMenu() {
+async function deleteFromMenu() {
   hideContextMenu();
-  await deleteSelection();
+  if (hasSelection.value) {
+    await deleteSelection();
+    return;
+  }
+  const item = contextDeleteItem.value;
+  if (item) {
+    await deleteItems([item]);
+  }
 }
 
 async function deleteSelection() {
@@ -1448,7 +1756,18 @@ async function deleteSelection() {
     return;
   }
 
-  const selected = selectedEntries.value;
+  await deleteItems(selectedEntries.value);
+}
+
+async function deleteItems(items) {
+  if (!items.length || !props.connectionId) {
+    return;
+  }
+
+  const selected = items.map((item) => ({
+    path: item.path,
+    isDir: Boolean(item.isDir),
+  }));
   if (!window.confirm(deleteConfirmMessage(selected))) {
     return;
   }
@@ -1464,9 +1783,11 @@ async function deleteSelection() {
         isDir: entry.isDir,
       })),
     );
+    const nextPath = pathAfterDeletingItems(selected);
+    syncDirectoryCacheAfterDelete(selected);
     clearSelection();
     clearClipboardIfDeleted(selected);
-    await refresh(currentPath.value || initialPathForMode(props.workMode), { useCache: false });
+    await refresh(nextPath, { useCache: false });
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '删除失败';
   } finally {
@@ -1525,6 +1846,12 @@ async function pasteClipboard(targetPath = contextTargetDir.value) {
       action: pendingClipboard.action,
       items: pendingClipboard.items,
     });
+    invalidateDirectoryCache(targetPath || defaultDirectoryPath());
+    if (pendingClipboard.action === 'move' && pendingClipboard.sourceConnectionId === props.connectionId) {
+      for (const item of pendingClipboard.items) {
+        invalidateDirectoryCache(parentPath(item.path));
+      }
+    }
     if (pendingClipboard.action === 'move') {
       localStorage.removeItem(CLIPBOARD_KEY);
       clipboard.value = null;

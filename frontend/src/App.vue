@@ -124,7 +124,12 @@
           <div class="splitter" title="拖拽调整控制台高度" @mousedown.prevent="startDrag"></div>
 
           <div class="file-band panel">
-            <FileManager :key="`${activeSession.connectionId}:${activeSession.workMode}`" :connection-id="activeSession.connectionId" :work-mode="activeSession.workMode" />
+            <FileManager
+              :key="`${activeSession.connectionId}:${activeSession.workMode}`"
+              :connection-id="activeSession.connectionId"
+              :work-mode="activeSession.workMode"
+              :hardware="activeSession.hardware"
+            />
           </div>
         </section>
       </section>
@@ -258,9 +263,10 @@ async function handleConnect(payload) {
     const result = targetId ? await updateConnectionConfig(request) : await saveConnectionConfig(request);
     const connection = normalizeConnection(result.connection);
 
+    const testResult = await testConnection(connection.id);
+    const testedConnection = normalizeConnection(testResult.connection || { ...connection, hardware: testResult.hardware });
     await loadSavedConnections();
-    await testConnection(connection.id);
-    openSession(connection);
+    openSession(testedConnection);
     startNewConnection();
   } catch (error) {
     connectError.value = error instanceof Error ? error.message : '连接失败';
@@ -275,8 +281,10 @@ async function connectFromSaved(item) {
   configError.value = '';
 
   try {
-    await testConnection(item.id);
-    openSession(item);
+    const testResult = await testConnection(item.id);
+    const testedConnection = normalizeConnection(testResult.connection || { ...item, hardware: testResult.hardware });
+    await loadSavedConnections();
+    openSession(testedConnection);
   } catch (error) {
     connectError.value = error instanceof Error ? error.message : '连接失败';
   } finally {
@@ -293,6 +301,7 @@ function openSession(connection) {
     username: connection.username,
     authMethod: connection.authMethod || 'password',
     workMode: normalizeWorkMode(connection.workMode),
+    hardware: normalizeHardware(connection.hardware),
   };
 
   sessions.value = [...sessions.value.filter((item) => item.connectionId !== session.connectionId), session];
@@ -392,6 +401,17 @@ function normalizeConnection(connection) {
     username: String(connection?.username || ''),
     authMethod: String(connection?.authMethod || 'password'),
     workMode: normalizeWorkMode(connection?.workMode),
+    hardware: normalizeHardware(connection?.hardware),
+  };
+}
+
+function normalizeHardware(value) {
+  return {
+    cpuThreads: Math.max(1, Number(value?.cpuThreads) || 1),
+    cpuCores: Math.max(0, Number(value?.cpuCores) || 0),
+    cpuModel: String(value?.cpuModel || ''),
+    memoryTotalBytes: Math.max(0, Number(value?.memoryTotalBytes) || 0),
+    readAt: String(value?.readAt || ''),
   };
 }
 

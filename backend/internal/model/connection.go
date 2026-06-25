@@ -6,24 +6,34 @@ import (
 )
 
 type Connection struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Host       string `json:"host"`
-	Port       int    `json:"port"`
-	Username   string `json:"username"`
-	Password   string `json:"password,omitempty"`
-	AuthMethod string `json:"authMethod"`
-	WorkMode   string `json:"workMode"`
+	ID         string       `json:"id"`
+	Name       string       `json:"name"`
+	Host       string       `json:"host"`
+	Port       int          `json:"port"`
+	Username   string       `json:"username"`
+	Password   string       `json:"password,omitempty"`
+	AuthMethod string       `json:"authMethod"`
+	WorkMode   string       `json:"workMode"`
+	Hardware   HardwareInfo `json:"hardware,omitempty"`
 }
 
 type ConnectionSummary struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Host       string `json:"host"`
-	Port       int    `json:"port"`
-	Username   string `json:"username"`
-	AuthMethod string `json:"authMethod"`
-	WorkMode   string `json:"workMode"`
+	ID         string       `json:"id"`
+	Name       string       `json:"name"`
+	Host       string       `json:"host"`
+	Port       int          `json:"port"`
+	Username   string       `json:"username"`
+	AuthMethod string       `json:"authMethod"`
+	WorkMode   string       `json:"workMode"`
+	Hardware   HardwareInfo `json:"hardware,omitempty"`
+}
+
+type HardwareInfo struct {
+	CPUThreads       int    `json:"cpuThreads,omitempty"`
+	CPUCores         int    `json:"cpuCores,omitempty"`
+	CPUModel         string `json:"cpuModel,omitempty"`
+	MemoryTotalBytes int64  `json:"memoryTotalBytes,omitempty"`
+	ReadAt           string `json:"readAt,omitempty"`
 }
 
 func (c Connection) Address() string {
@@ -39,6 +49,7 @@ func (c Connection) Summary() ConnectionSummary {
 		Username:   c.Username,
 		AuthMethod: c.AuthMethod,
 		WorkMode:   NormalizeWorkMode(c.WorkMode),
+		Hardware:   c.Hardware,
 	}
 }
 

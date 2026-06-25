@@ -163,10 +163,11 @@ export function testConnection(connectionId) {
   });
 }
 
-export function listRemoteFiles(connectionId, path) {
+export function listRemoteFiles(connectionId, path, options = {}) {
   return requestJson('/api/sftp/list', {
     method: 'POST',
     body: JSON.stringify({ connectionId, path }),
+    signal: options.signal,
   });
 }
 

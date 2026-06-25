@@ -391,7 +391,23 @@ func (s *Server) handleSSHTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	hardware, err := sshsvc.ReadHardwareInfo(conn, s.sshTimeout)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	conn.Hardware = hardware
+	updated := s.store.Put(conn)
+	if err := s.saveConnectionConfigs(); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":         true,
+		"hardware":   hardware,
+		"connection": updated.Summary(),
+	})
 }
 
 func (s *Server) handleSSHExec(w http.ResponseWriter, r *http.Request) {
@@ -848,6 +864,7 @@ func connectionFromRequest(req createConnectionRequest, existing model.Connectio
 		Password:   password,
 		AuthMethod: authMethod,
 		WorkMode:   workMode,
+		Hardware:   existing.Hardware,
 	}
 }
 
