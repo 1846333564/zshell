@@ -5,7 +5,7 @@
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(2, 8, 14, 0.62);
+  background: var(--modal-backdrop);
 }
 
 .app-dialog {
@@ -14,9 +14,9 @@
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
-  border: 1px solid rgba(146, 202, 255, 0.28);
+  border: 1px solid rgba(var(--line-rgb), 0.28);
   border-radius: 8px;
-  background: rgba(8, 20, 31, 0.98);
+  background: rgba(var(--panel-rgb), 0.98);
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
 }
 
@@ -27,7 +27,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 1px solid rgba(146, 202, 255, 0.16);
+  border-bottom: 1px solid rgba(var(--line-rgb), 0.16);
 }
 
 .dialog-head div {
@@ -51,16 +51,16 @@
   flex: 0 0 auto;
   width: 28px;
   height: 28px;
-  border: 1px solid rgba(146, 202, 255, 0.2);
+  border: 1px solid rgba(var(--line-rgb), 0.2);
   border-radius: 7px;
   color: var(--muted);
-  background: rgba(10, 24, 37, 0.72);
+  background: rgba(var(--panel-rgb), 0.72);
   cursor: pointer;
 }
 
 .dialog-close:hover:not(:disabled) {
   color: var(--text);
-  border-color: rgba(100, 233, 186, 0.45);
+  border-color: rgba(var(--primary-rgb), 0.45);
 }
 
 .dialog-close:disabled {
@@ -84,15 +84,15 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  border-top: 1px solid rgba(146, 202, 255, 0.16);
+  border-top: 1px solid rgba(var(--line-rgb), 0.16);
 }
 
 .update-progress-panel {
   margin-top: 12px;
   padding: 10px;
-  border: 1px solid rgba(146, 202, 255, 0.18);
+  border: 1px solid rgba(var(--line-rgb), 0.18);
   border-radius: 8px;
-  background: rgba(10, 24, 37, 0.62);
+  background: rgba(var(--panel-rgb), 0.62);
 }
 
 .update-progress-head,
@@ -141,10 +141,10 @@
 
 .update-progress-log-row {
   min-height: 24px;
-  border: 1px solid rgba(146, 202, 255, 0.12);
+  border: 1px solid rgba(var(--line-rgb), 0.12);
   border-radius: 6px;
   padding: 4px 7px;
-  background: rgba(6, 16, 26, 0.58);
+  background: rgba(var(--bg-1-rgb), 0.58);
 }
 
 .update-progress-log-row span {
@@ -175,4 +175,120 @@
 .dialog-error {
   margin-top: 10px !important;
   color: var(--danger);
+}
+
+.theme-dialog {
+  width: min(720px, 100%);
+}
+
+.theme-dialog-body {
+  display: grid;
+  gap: 14px;
+}
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.theme-choice {
+  min-width: 0;
+  height: 54px;
+  border: 1px solid rgba(var(--line-rgb), 0.2);
+  border-radius: 8px;
+  padding: 8px 9px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  background: rgba(var(--panel-rgb), 0.56);
+  cursor: pointer;
+  text-align: left;
+}
+
+.theme-choice:hover,
+.theme-choice.active {
+  border-color: rgba(var(--primary-rgb), 0.55);
+  background: rgba(var(--primary-rgb), 0.12);
+}
+
+.theme-choice-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.theme-swatches {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 4px;
+}
+
+.theme-swatches i {
+  width: 16px;
+  height: 16px;
+  border: 1px solid rgba(var(--text-rgb), 0.16);
+  border-radius: 50%;
+}
+
+.custom-theme-panel {
+  border: 1px solid rgba(var(--line-rgb), 0.18);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(var(--panel-rgb), 0.46);
+}
+
+.custom-theme-head {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.custom-theme-head strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.theme-color-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.theme-color-row {
+  min-width: 0;
+  min-height: 36px;
+  display: grid;
+  grid-template-columns: 72px 38px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.theme-color-row input {
+  width: 34px;
+  height: 28px;
+  border: 1px solid rgba(var(--line-rgb), 0.28);
+  border-radius: 7px;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.theme-color-row code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
 }

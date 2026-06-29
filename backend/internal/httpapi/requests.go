@@ -59,6 +59,8 @@ type monitorSnapshotRequest struct {
 }
 
 type uiPreferencesRequest struct {
-	UIScale          *float64 `json:"uiScale"`
-	TerminalFontSize *int     `json:"terminalFontSize"`
+	UIScale          *float64          `json:"uiScale"`
+	TerminalFontSize *int              `json:"terminalFontSize"`
+	ThemeKey         *string           `json:"themeKey"`
+	CustomTheme      map[string]string `json:"customTheme"`
 }

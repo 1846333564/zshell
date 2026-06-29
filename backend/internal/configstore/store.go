@@ -21,8 +21,10 @@ type File struct {
 }
 
 type Preferences struct {
-	UIScale          float64 `json:"uiScale,omitempty"`
-	TerminalFontSize int     `json:"terminalFontSize,omitempty"`
+	UIScale          float64           `json:"uiScale,omitempty"`
+	TerminalFontSize int               `json:"terminalFontSize,omitempty"`
+	ThemeKey         string            `json:"themeKey,omitempty"`
+	CustomTheme      map[string]string `json:"customTheme,omitempty"`
 }
 
 func NewDefault() (*Store, error) {

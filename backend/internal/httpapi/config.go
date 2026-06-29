@@ -9,6 +9,33 @@ import (
 	"zshell/backend/internal/model"
 )
 
+const defaultThemeKey = "zshell"
+
+var allowedThemeKeys = map[string]struct{}{
+	"zshell":           {},
+	"dracula":          {},
+	"nord":             {},
+	"tokyo-night":      {},
+	"catppuccin-mocha": {},
+	"gruvbox-dark":     {},
+	"one-dark":         {},
+	"solarized-dark":   {},
+	"custom":           {},
+}
+
+var allowedCustomThemeFields = map[string]struct{}{
+	"background":         {},
+	"backgroundAlt":      {},
+	"backgroundElevated": {},
+	"panel":              {},
+	"line":               {},
+	"primary":            {},
+	"primaryAlt":         {},
+	"danger":             {},
+	"text":               {},
+	"muted":              {},
+}
+
 func connectionFromRequest(req createConnectionRequest, existing model.Connection) model.Connection {
 	authMethod := normalizeAuthMethod(req.AuthMethod)
 	workMode := normalizeWorkMode(req.WorkMode)
@@ -83,18 +110,22 @@ func (s *Server) loadUIPreferences() (configstore.Preferences, error) {
 	if err != nil {
 		return configstore.Preferences{}, err
 	}
-	preferences.UIScale = normalizeUIScale(preferences.UIScale)
-	preferences.TerminalFontSize = normalizeTerminalFontSize(preferences.TerminalFontSize)
-	return preferences, nil
+	return normalizeUIPreferences(preferences), nil
 }
 
 func (s *Server) saveUIPreferences(preferences configstore.Preferences) error {
 	if s.configStore == nil {
 		return errors.New("connection config store unavailable")
 	}
+	return s.configStore.SavePreferences(normalizeUIPreferences(preferences))
+}
+
+func normalizeUIPreferences(preferences configstore.Preferences) configstore.Preferences {
 	preferences.UIScale = normalizeUIScale(preferences.UIScale)
 	preferences.TerminalFontSize = normalizeTerminalFontSize(preferences.TerminalFontSize)
-	return s.configStore.SavePreferences(preferences)
+	preferences.ThemeKey = normalizeThemeKey(preferences.ThemeKey)
+	preferences.CustomTheme = normalizeCustomTheme(preferences.CustomTheme)
+	return preferences
 }
 
 func normalizeUIScale(value float64) float64 {
@@ -116,6 +147,47 @@ func normalizeTerminalFontSize(value int) int {
 		return 28
 	}
 	return value
+}
+
+func normalizeThemeKey(value string) string {
+	key := strings.ToLower(strings.TrimSpace(value))
+	if _, ok := allowedThemeKeys[key]; ok {
+		return key
+	}
+	return defaultThemeKey
+}
+
+func normalizeCustomTheme(value map[string]string) map[string]string {
+	if len(value) == 0 {
+		return nil
+	}
+	cleaned := make(map[string]string, len(value))
+	for key, color := range value {
+		if _, ok := allowedCustomThemeFields[key]; !ok {
+			continue
+		}
+		normalized := strings.ToLower(strings.TrimSpace(color))
+		if !isHexColor(normalized) {
+			continue
+		}
+		cleaned[key] = normalized
+	}
+	if len(cleaned) == 0 {
+		return nil
+	}
+	return cleaned
+}
+
+func isHexColor(value string) bool {
+	if len(value) != 7 || value[0] != '#' {
+		return false
+	}
+	for _, char := range value[1:] {
+		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeAuthMethod(value string) string {

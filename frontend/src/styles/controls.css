@@ -5,7 +5,7 @@
   padding: 8px;
   border-radius: 10px;
   overflow: hidden;
-  border: 1px solid rgba(147, 212, 255, 0.2);
+  border: 1px solid rgba(var(--line-rgb), 0.2);
 }
 
 .xterm {
@@ -19,29 +19,29 @@
   border-radius: 10px;
   padding: 10px 12px;
   font-weight: 600;
-  color: #06201c;
+  color: var(--on-primary);
   background: linear-gradient(120deg, var(--primary), var(--primary-2));
   cursor: pointer;
 }
 
 .small-btn,
 .mini-btn {
-  border: 1px solid rgba(110, 188, 240, 0.4);
+  border: 1px solid rgba(var(--line-rgb), 0.4);
   border-radius: 8px;
-  background: rgba(12, 33, 52, 0.8);
+  background: rgba(var(--panel-rgb), 0.8);
   color: var(--text);
   padding: 7px 10px;
   cursor: pointer;
 }
 
 .small-btn.danger {
-  border-color: rgba(255, 111, 125, 0.5);
-  background: rgba(73, 25, 34, 0.7);
+  border-color: rgba(var(--danger-rgb), 0.5);
+  background: rgba(var(--danger-rgb), 0.18);
 }
 
 .mini-btn.danger {
-  border-color: rgba(255, 111, 125, 0.45);
-  background: rgba(71, 25, 35, 0.62);
+  border-color: rgba(var(--danger-rgb), 0.45);
+  background: rgba(var(--danger-rgb), 0.16);
 }
 
 .small-btn:disabled,
@@ -68,12 +68,12 @@
 
 .form-row input {
   width: 100%;
-  border: 1px solid rgba(102, 171, 220, 0.3);
+  border: 1px solid rgba(var(--line-rgb), 0.3);
   border-radius: 10px;
   padding: 10px 11px;
   outline: none;
   color: var(--text);
-  background: rgba(10, 24, 37, 0.8);
+  background: rgba(var(--panel-rgb), 0.8);
   font-size: 14px;
 }
 
@@ -99,7 +99,7 @@
 .form-row input:focus,
 .path-input:focus {
   border-color: var(--primary-2);
-  box-shadow: 0 0 0 2px rgba(40, 197, 255, 0.15);
+  box-shadow: 0 0 0 2px rgba(var(--primary-2-rgb), 0.15);
 }
 
 .tip {
@@ -152,17 +152,17 @@
   flex: 0 0 auto;
   width: 30px;
   height: 30px;
-  border: 1px solid rgba(146, 202, 255, 0.22);
+  border: 1px solid rgba(var(--line-rgb), 0.22);
   border-radius: 7px;
   color: var(--muted);
-  background: rgba(10, 24, 37, 0.72);
+  background: rgba(var(--panel-rgb), 0.72);
   cursor: pointer;
   line-height: 1;
 }
 
 .path-history-button:hover:not(:disabled) {
   color: var(--text);
-  border-color: rgba(100, 233, 186, 0.45);
+  border-color: rgba(var(--primary-rgb), 0.45);
 }
 
 .path-history-button:disabled {
@@ -173,9 +173,9 @@
 .path-input {
   min-width: 220px;
   flex: 1;
-  border: 1px solid rgba(102, 171, 220, 0.3);
+  border: 1px solid rgba(var(--line-rgb), 0.3);
   border-radius: 8px;
-  background: rgba(10, 24, 37, 0.8);
+  background: rgba(var(--panel-rgb), 0.8);
   color: var(--text);
   padding: 7px 10px;
 }

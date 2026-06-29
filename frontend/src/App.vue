@@ -30,7 +30,7 @@
             <button class="app-menu-button" type="button">UI管理</button>
             <div class="app-menu-dropdown">
               <button type="button" @click="resetUiScale">重置缩放</button>
-              <button type="button" disabled>主题设置</button>
+              <button type="button" @click="showThemeDialog">主题设置</button>
               <button type="button" disabled>布局设置</button>
             </div>
           </div>
@@ -159,6 +159,62 @@
         </section>
       </div>
 
+      <div v-if="themeDialog.visible" class="modal-backdrop" @click.self="cancelThemeDialog">
+        <section class="app-dialog theme-dialog" @click.stop>
+          <header class="dialog-head">
+            <div>
+              <strong>主题设置</strong>
+              <span>当前 {{ activeTheme.name }}</span>
+            </div>
+            <button type="button" class="dialog-close" :disabled="themeDialog.saving" @click="cancelThemeDialog">×</button>
+          </header>
+
+          <div class="dialog-body theme-dialog-body">
+            <section class="theme-grid" aria-label="主题列表">
+              <button
+                v-for="theme in themeOptions"
+                :key="theme.id"
+                type="button"
+                class="theme-choice"
+                :class="{ active: themeDialog.draftKey === theme.id }"
+                @click="selectThemeOption(theme.id)"
+              >
+                <span class="theme-choice-name">{{ theme.name }}</span>
+                <span class="theme-swatches" aria-hidden="true">
+                  <i v-for="color in theme.preview" :key="color" :style="{ background: color }"></i>
+                </span>
+              </button>
+            </section>
+
+            <section class="custom-theme-panel">
+              <div class="custom-theme-head">
+                <strong>自定义颜色</strong>
+                <button class="mini-btn" type="button" @click="resetCustomTheme">恢复默认</button>
+              </div>
+
+              <div class="theme-color-grid">
+                <label v-for="field in themeColorFields" :key="field.key" class="theme-color-row">
+                  <span>{{ field.label }}</span>
+                  <input
+                    type="color"
+                    :value="themeDialog.draftCustomTheme[field.key]"
+                    @input="setCustomThemeColor(field.key, $event.target.value)"
+                  />
+                  <code>{{ themeDialog.draftCustomTheme[field.key] }}</code>
+                </label>
+              </div>
+            </section>
+
+            <p v-if="themeDialog.error" class="dialog-error">{{ themeDialog.error }}</p>
+          </div>
+
+          <footer class="dialog-actions">
+            <button class="small-btn" type="button" :disabled="themeDialog.saving" @click="saveThemeDialog">保存主题</button>
+            <button class="small-btn" type="button" :disabled="themeDialog.saving" @click="cancelThemeDialog">取消</button>
+          </footer>
+        </section>
+      </div>
+
       <div v-if="updateDialog.visible" class="modal-backdrop" @click.self="closeUpdateDialog">
         <section class="app-dialog update-dialog" @click.stop>
           <header class="dialog-head">
@@ -223,9 +279,11 @@ import { useAppController } from './composables/app/useAppController';
 const {
   activeSession,
   activeSessionId,
+  activeTheme,
   appInfo,
   aboutDialog,
   busy,
+  cancelThemeDialog,
   checkUpdatesFromAbout,
   closeSession,
   closeUpdateDialog,
@@ -247,12 +305,20 @@ const {
   openReleasePage,
   removeSavedConnection,
   resetUiScale,
+  resetCustomTheme,
+  saveThemeDialog,
   savedConnections,
+  selectThemeOption,
   sessions,
+  setCustomThemeColor,
   showAboutDialog,
   showConnectHome,
+  showThemeDialog,
   startDrag,
   terminalFontSize,
+  themeColorFields,
+  themeDialog,
+  themeOptions,
   toggleMaximizeWindow,
   updateDialog,
   activateSession,

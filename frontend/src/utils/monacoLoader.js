@@ -1,5 +1,7 @@
+import { buildMonacoThemeFromDocument } from '../theme';
+
 let monacoPromise = null;
-let themeConfigured = false;
+let monacoConfigured = false;
 
 export const MONACO_THEME = 'zshell-dark';
 
@@ -118,35 +120,11 @@ async function loadWorkers() {
 }
 
 function configureMonaco(monaco) {
-  if (themeConfigured) {
+  applyMonacoTheme(monaco);
+  if (monacoConfigured) {
     return;
   }
-  themeConfigured = true;
-
-  monaco.editor.defineTheme(MONACO_THEME, {
-    base: 'vs-dark',
-    inherit: true,
-    rules: [
-      { token: 'comment', foreground: '6f8da4' },
-      { token: 'keyword', foreground: '64e9ba' },
-      { token: 'number', foreground: 'f2d479' },
-      { token: 'string', foreground: '8bdcff' },
-      { token: 'type', foreground: 'a2d2ff' },
-    ],
-    colors: {
-      'editor.background': '#030a14',
-      'editor.foreground': '#e9f5ff',
-      'editor.lineHighlightBackground': '#0e2535',
-      'editor.selectionBackground': '#17415b',
-      'editorCursor.foreground': '#64e9ba',
-      'editorLineNumber.foreground': '#456479',
-      'editorLineNumber.activeForeground': '#8bdcff',
-      'input.background': '#08141f',
-      'input.foreground': '#e9f5ff',
-      'list.hoverBackground': '#123044',
-      'widget.shadow': '#00000066',
-    },
-  });
+  monacoConfigured = true;
 
   const diagnostics = {
     noSemanticValidation: true,
@@ -157,4 +135,9 @@ function configureMonaco(monaco) {
   monaco.languages.typescript?.typescriptDefaults?.setDiagnosticsOptions(diagnostics);
   monaco.languages.typescript?.javascriptDefaults?.setEagerModelSync(false);
   monaco.languages.typescript?.typescriptDefaults?.setEagerModelSync(false);
+}
+
+export function applyMonacoTheme(monaco) {
+  monaco.editor.defineTheme(MONACO_THEME, buildMonacoThemeFromDocument());
+  monaco.editor.setTheme(MONACO_THEME);
 }

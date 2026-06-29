@@ -16,10 +16,10 @@
 
 .monitor-identity span {
   min-width: 0;
-  border: 1px solid rgba(146, 202, 255, 0.18);
+  border: 1px solid rgba(var(--line-rgb), 0.18);
   border-radius: 7px;
   padding: 7px 8px;
-  background: rgba(8, 20, 31, 0.72);
+  background: rgba(var(--panel-rgb), 0.72);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -43,11 +43,11 @@
 .load-cell {
   min-width: 0;
   height: 62px;
-  border: 1px solid rgba(146, 202, 255, 0.18);
+  border: 1px solid rgba(var(--line-rgb), 0.18);
   border-radius: 8px;
   display: grid;
   place-items: center;
-  background: rgba(8, 20, 31, 0.72);
+  background: rgba(var(--panel-rgb), 0.72);
   color: var(--text);
 }
 
@@ -63,10 +63,10 @@
 .monitor-section {
   flex: 0 0 auto;
   min-height: 0;
-  border: 1px solid rgba(146, 202, 255, 0.16);
+  border: 1px solid rgba(var(--line-rgb), 0.16);
   border-radius: 8px;
   padding: 8px;
-  background: rgba(8, 19, 30, 0.52);
+  background: rgba(var(--panel-rgb), 0.52);
   overflow: hidden;
 }
 
@@ -82,9 +82,9 @@
   display: grid;
   gap: 3px;
   padding: 6px 7px;
-  border: 1px solid rgba(146, 202, 255, 0.12);
+  border: 1px solid rgba(var(--line-rgb), 0.12);
   border-radius: 7px;
-  background: rgba(10, 24, 37, 0.58);
+  background: rgba(var(--panel-rgb), 0.58);
 }
 
 .server-metric span {
@@ -112,16 +112,16 @@
 }
 
 .sort-buttons button {
-  border: 1px solid rgba(146, 202, 255, 0.18);
+  border: 1px solid rgba(var(--line-rgb), 0.18);
   border-radius: 6px;
   padding: 3px 7px;
   color: var(--muted);
-  background: rgba(10, 24, 37, 0.72);
+  background: rgba(var(--panel-rgb), 0.72);
   cursor: pointer;
 }
 
 .sort-buttons button.active {
-  color: #06201c;
+  color: var(--on-primary);
   background: var(--primary);
 }
 
@@ -164,10 +164,10 @@
   display: grid;
   grid-template-columns: 58px minmax(0, 1fr);
   gap: 6px;
-  border: 1px solid rgba(146, 202, 255, 0.14);
+  border: 1px solid rgba(var(--line-rgb), 0.14);
   border-radius: 7px;
   overflow: hidden;
-  background: linear-gradient(180deg, rgba(10, 24, 37, 0.82), rgba(5, 15, 24, 0.82));
+  background: linear-gradient(180deg, rgba(var(--panel-rgb), 0.82), rgba(var(--bg-1-rgb), 0.82));
 }
 
 .network-chart svg {
@@ -196,7 +196,7 @@
 
 .network-axis,
 .network-grid-line {
-  stroke: rgba(146, 202, 255, 0.18);
+  stroke: rgba(var(--line-rgb), 0.18);
   stroke-width: 0.7;
   vector-effect: non-scaling-stroke;
 }
@@ -210,11 +210,11 @@
 }
 
 .network-line.rx {
-  stroke: #64e9ba;
+  stroke: var(--primary);
 }
 
 .network-line.tx {
-  stroke: #8bdcff;
+  stroke: var(--primary-2);
 }
 
 .network-legend {
@@ -242,11 +242,11 @@
 }
 
 .network-legend i.rx {
-  background: #64e9ba;
+  background: var(--primary);
 }
 
 .network-legend i.tx {
-  background: #8bdcff;
+  background: var(--primary-2);
 }
 
 .net-row {

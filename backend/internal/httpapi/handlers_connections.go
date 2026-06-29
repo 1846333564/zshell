@@ -59,6 +59,12 @@ func (s *Server) handleUIPreferences(w http.ResponseWriter, r *http.Request) {
 		if req.TerminalFontSize != nil {
 			preferences.TerminalFontSize = normalizeTerminalFontSize(*req.TerminalFontSize)
 		}
+		if req.ThemeKey != nil {
+			preferences.ThemeKey = normalizeThemeKey(*req.ThemeKey)
+		}
+		if req.CustomTheme != nil {
+			preferences.CustomTheme = normalizeCustomTheme(req.CustomTheme)
+		}
 		if err := s.saveUIPreferences(preferences); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return

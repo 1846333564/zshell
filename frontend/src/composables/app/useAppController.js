@@ -102,6 +102,7 @@ export function useAppController() {
     connections.loadSavedConnections();
     loadAppInfo();
     ui.applyUiScale();
+    ui.applyCurrentTheme();
     ui.loadUIPreferences();
     updates.scheduleStartupUpdateCheck();
     scheduleEditorWarmup();

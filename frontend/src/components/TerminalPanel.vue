@@ -28,6 +28,7 @@ import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
 import { createTerminalClient } from '../services/wsClient';
+import { buildTerminalThemeFromDocument } from '../theme';
 import { viewportContextMenuPosition } from '../utils/contextMenuPosition';
 
 const props = defineProps({
@@ -65,6 +66,7 @@ let term;
 let fitAddon;
 let wsClient;
 let resizeObserver;
+let themeChangeHandler;
 let currentTerminalFontSize = normalizeTerminalFontSize(props.terminalFontSize);
 
 const online = ref(false);
@@ -75,28 +77,7 @@ onMounted(async () => {
     convertEol: true,
     fontSize: currentTerminalFontSize,
     lineHeight: 1.3,
-    theme: {
-      background: '#030a14',
-      foreground: '#e9f5ff',
-      cursor: '#64e9ba',
-      selectionBackground: '#17415b',
-      black: '#030a14',
-      red: '#ff6f7d',
-      green: '#64e9ba',
-      yellow: '#f2d479',
-      blue: '#53c6ff',
-      magenta: '#7bb7ff',
-      cyan: '#58e5e5',
-      white: '#e9f5ff',
-      brightBlack: '#2b3f55',
-      brightRed: '#ff95a0',
-      brightGreen: '#8dffd8',
-      brightYellow: '#fff0ab',
-      brightBlue: '#8bdcff',
-      brightMagenta: '#a2d2ff',
-      brightCyan: '#8af2f2',
-      brightWhite: '#ffffff',
-    },
+    theme: buildTerminalThemeFromDocument(),
   });
   term.attachCustomKeyEventHandler(handleTerminalShortcut);
 
@@ -131,10 +112,15 @@ onMounted(async () => {
   });
 
   resizeObserver.observe(terminalMount.value);
+  themeChangeHandler = () => applyTerminalTheme();
+  window.addEventListener('zshell-theme-change', themeChangeHandler);
 });
 
 onBeforeUnmount(() => {
   disconnect();
+  if (themeChangeHandler) {
+    window.removeEventListener('zshell-theme-change', themeChangeHandler);
+  }
   resizeObserver?.disconnect();
   term?.dispose();
 });
@@ -275,6 +261,13 @@ function applyTerminalFontSize() {
   if (online.value && wsClient) {
     wsClient.sendResize(term.cols, term.rows);
   }
+}
+
+function applyTerminalTheme() {
+  if (!term) {
+    return;
+  }
+  term.options.theme = buildTerminalThemeFromDocument();
 }
 
 function normalizeTerminalFontSize(value) {

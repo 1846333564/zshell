@@ -1,9 +1,30 @@
-import { ref } from 'vue';
+import { reactive, ref } from 'vue';
 import { getUIPreferences, saveUIPreferences } from '../../services/apiClient';
+import {
+  CUSTOM_THEME_KEY,
+  DEFAULT_THEME_KEY,
+  THEME_COLOR_FIELDS,
+  THEME_OPTIONS,
+  applyThemeToDocument,
+  createDefaultCustomTheme,
+  normalizeCustomTheme,
+  normalizeThemeKey,
+  resolveTheme,
+} from '../../theme';
 
 export function useUiPreferences() {
   const uiScale = ref(1);
   const terminalFontSize = ref(14);
+  const themeKey = ref(DEFAULT_THEME_KEY);
+  const customTheme = ref(createDefaultCustomTheme());
+  const activeTheme = ref(resolveTheme(themeKey.value, customTheme.value));
+  const themeDialog = reactive({
+    visible: false,
+    draftKey: DEFAULT_THEME_KEY,
+    draftCustomTheme: createDefaultCustomTheme(),
+    saving: false,
+    error: '',
+  });
   let saveUiScaleTimer = null;
 
   function handleGlobalKeydown(event) {
@@ -66,11 +87,20 @@ export function useUiPreferences() {
     document.documentElement.style.setProperty('--ui-scale-inverse', (1 / scale).toFixed(6));
   }
 
+  function applyCurrentTheme() {
+    activeTheme.value = resolveTheme(themeKey.value, customTheme.value);
+    applyThemeToDocument(activeTheme.value);
+  }
+
   async function loadUIPreferences() {
     try {
       const result = await getUIPreferences();
-      setUiScale(result?.preferences?.uiScale || 1, false);
-      terminalFontSize.value = clampTerminalFontSize(result?.preferences?.terminalFontSize || 14);
+      const preferences = result?.preferences || {};
+      setUiScale(preferences.uiScale || 1, false);
+      terminalFontSize.value = clampTerminalFontSize(preferences.terminalFontSize || 14);
+      themeKey.value = normalizeThemeKey(preferences.themeKey || DEFAULT_THEME_KEY);
+      customTheme.value = normalizeCustomTheme(preferences.customTheme);
+      applyCurrentTheme();
     } catch (error) {
       console.warn('load ui preferences failed', error);
     }
@@ -83,6 +113,71 @@ export function useUiPreferences() {
   function handleTerminalFontSizeChange(value) {
     terminalFontSize.value = clampTerminalFontSize(value);
     scheduleSavePreferences();
+  }
+
+  function showThemeDialog() {
+    themeDialog.visible = true;
+    themeDialog.draftKey = themeKey.value;
+    themeDialog.draftCustomTheme = { ...customTheme.value };
+    themeDialog.error = '';
+  }
+
+  function cancelThemeDialog() {
+    themeDialog.visible = false;
+    themeDialog.error = '';
+    applyCurrentTheme();
+  }
+
+  function selectThemeOption(value) {
+    themeDialog.draftKey = normalizeThemeKey(value);
+    previewThemeDraft();
+  }
+
+  function setCustomThemeColor(key, value) {
+    if (!THEME_COLOR_FIELDS.some((field) => field.key === key)) {
+      return;
+    }
+    themeDialog.draftKey = CUSTOM_THEME_KEY;
+    themeDialog.draftCustomTheme = {
+      ...themeDialog.draftCustomTheme,
+      [key]: value,
+    };
+    previewThemeDraft();
+  }
+
+  function resetCustomTheme() {
+    themeDialog.draftKey = CUSTOM_THEME_KEY;
+    themeDialog.draftCustomTheme = createDefaultCustomTheme();
+    previewThemeDraft();
+  }
+
+  async function saveThemeDialog() {
+    themeDialog.saving = true;
+    themeDialog.error = '';
+    const nextKey = normalizeThemeKey(themeDialog.draftKey);
+    const nextCustomTheme = normalizeCustomTheme(themeDialog.draftCustomTheme);
+    const prevKey = themeKey.value;
+    const prevCustomTheme = { ...customTheme.value };
+
+    themeKey.value = nextKey;
+    customTheme.value = nextCustomTheme;
+    applyCurrentTheme();
+
+    try {
+      await savePreferencesNow();
+      themeDialog.visible = false;
+    } catch (error) {
+      themeKey.value = prevKey;
+      customTheme.value = prevCustomTheme;
+      applyCurrentTheme();
+      themeDialog.error = error instanceof Error ? error.message : '主题保存失败';
+    } finally {
+      themeDialog.saving = false;
+    }
+  }
+
+  function previewThemeDraft() {
+    applyThemeToDocument(resolveTheme(themeDialog.draftKey, themeDialog.draftCustomTheme));
   }
 
   function clampTerminalFontSize(value) {
@@ -100,14 +195,20 @@ export function useUiPreferences() {
     saveUiScaleTimer = window.setTimeout(async () => {
       saveUiScaleTimer = null;
       try {
-        await saveUIPreferences({
-          uiScale: uiScale.value,
-          terminalFontSize: terminalFontSize.value,
-        });
+        await savePreferencesNow();
       } catch (error) {
         console.warn('save ui preferences failed', error);
       }
     }, 260);
+  }
+
+  function savePreferencesNow() {
+    return saveUIPreferences({
+      uiScale: uiScale.value,
+      terminalFontSize: terminalFontSize.value,
+      themeKey: themeKey.value,
+      customTheme: customTheme.value,
+    });
   }
 
   function cleanupUiPreferences() {
@@ -119,11 +220,24 @@ export function useUiPreferences() {
   return {
     uiScale,
     terminalFontSize,
+    themeKey,
+    customTheme,
+    activeTheme,
+    themeDialog,
+    themeOptions: THEME_OPTIONS,
+    themeColorFields: THEME_COLOR_FIELDS,
     handleGlobalKeydown,
     resetUiScale,
     applyUiScale,
+    applyCurrentTheme,
     loadUIPreferences,
     handleTerminalFontSizeChange,
+    showThemeDialog,
+    cancelThemeDialog,
+    selectThemeOption,
+    setCustomThemeColor,
+    resetCustomTheme,
+    saveThemeDialog,
     cleanupUiPreferences,
   };
 }

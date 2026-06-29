@@ -52,6 +52,7 @@ let model = null;
 let contentSubscription = null;
 let focusSubscription = null;
 let resizeObserver = null;
+let themeChangeHandler = null;
 let disposed = false;
 
 onMounted(() => {
@@ -63,6 +64,9 @@ onBeforeUnmount(() => {
   resizeObserver?.disconnect();
   contentSubscription?.dispose();
   focusSubscription?.dispose();
+  if (themeChangeHandler) {
+    window.removeEventListener('zshell-theme-change', themeChangeHandler);
+  }
   editor?.dispose();
   model?.dispose();
 });
@@ -166,6 +170,8 @@ async function initializeEditor() {
     });
     focusSubscription = editor.onDidFocusEditorWidget(() => emit('focus'));
     editor.addCommand(monacoApi.KeyMod.CtrlCmd | monacoApi.KeyCode.KeyS, () => emit('save'));
+    themeChangeHandler = () => monacoLoader?.applyMonacoTheme(monacoApi);
+    window.addEventListener('zshell-theme-change', themeChangeHandler);
 
     resizeObserver = new ResizeObserver(() => editor?.layout());
     resizeObserver.observe(editorMount.value);

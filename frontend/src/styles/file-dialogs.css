@@ -22,20 +22,20 @@
   justify-content: space-between;
   gap: 10px;
   padding: 6px 9px;
-  border: 1px solid rgba(146, 202, 255, 0.28);
+  border: 1px solid rgba(var(--line-rgb), 0.28);
   border-radius: 8px;
   color: var(--text);
-  background: rgba(8, 20, 31, 0.98);
+  background: rgba(var(--panel-rgb), 0.98);
   box-shadow: 0 12px 26px rgba(0, 0, 0, 0.3);
   cursor: pointer;
 }
 
 .upload-progress-chip.done {
-  border-color: rgba(100, 233, 186, 0.58);
+  border-color: rgba(var(--primary-rgb), 0.58);
 }
 
 .upload-progress-chip.error {
-  border-color: rgba(255, 111, 125, 0.55);
+  border-color: rgba(var(--danger-rgb), 0.55);
 }
 
 .upload-progress-chip strong,
@@ -50,18 +50,18 @@
 .upload-progress-panel {
   width: min(430px, 100%);
   padding: 10px;
-  border: 1px solid rgba(146, 202, 255, 0.28);
+  border: 1px solid rgba(var(--line-rgb), 0.28);
   border-radius: 8px;
-  background: rgba(8, 20, 31, 0.98);
+  background: rgba(var(--panel-rgb), 0.98);
   box-shadow: 0 16px 34px rgba(0, 0, 0, 0.36);
 }
 
 .upload-progress-panel.done {
-  border-color: rgba(100, 233, 186, 0.58);
+  border-color: rgba(var(--primary-rgb), 0.58);
 }
 
 .upload-progress-panel.error {
-  border-color: rgba(255, 111, 125, 0.55);
+  border-color: rgba(var(--danger-rgb), 0.55);
 }
 
 .upload-progress-head,
@@ -98,7 +98,7 @@
   margin: 8px 0;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(146, 202, 255, 0.14);
+  background: rgba(var(--line-rgb), 0.14);
 }
 
 .progress-track.small {
@@ -125,10 +125,10 @@
 
 .upload-file-row {
   min-width: 0;
-  border: 1px solid rgba(146, 202, 255, 0.14);
+  border: 1px solid rgba(var(--line-rgb), 0.14);
   border-radius: 7px;
   padding: 7px;
-  background: rgba(10, 24, 37, 0.64);
+  background: rgba(var(--panel-rgb), 0.64);
 }
 
 .upload-progress-message {
@@ -143,9 +143,9 @@
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   padding: 9px;
-  border: 1px solid rgba(146, 202, 255, 0.28);
+  border: 1px solid rgba(var(--line-rgb), 0.28);
   border-radius: 8px;
-  background: rgba(8, 20, 31, 0.98);
+  background: rgba(var(--panel-rgb), 0.98);
   box-shadow: 0 16px 34px rgba(0, 0, 0, 0.36);
 }
 
@@ -175,11 +175,11 @@
 
 .path-history-list button {
   min-width: 0;
-  border: 1px solid rgba(146, 202, 255, 0.14);
+  border: 1px solid rgba(var(--line-rgb), 0.14);
   border-radius: 6px;
   padding: 6px 8px;
   color: var(--text);
-  background: rgba(10, 24, 37, 0.64);
+  background: rgba(var(--panel-rgb), 0.64);
   text-align: left;
   cursor: pointer;
   overflow-wrap: anywhere;
@@ -188,12 +188,12 @@
 }
 
 .path-history-list button:hover {
-  background: rgba(35, 87, 118, 0.24);
+  background: rgba(var(--primary-2-rgb), 0.14);
 }
 
 .path-history-list button.active {
-  background: rgba(40, 197, 255, 0.18);
-  box-shadow: inset 3px 0 0 rgba(100, 233, 186, 0.8);
+  background: rgba(var(--primary-2-rgb), 0.18);
+  box-shadow: inset 3px 0 0 rgba(var(--primary-rgb), 0.8);
 }
 
 .remote-editor-window {
@@ -206,15 +206,15 @@
   grid-template-rows: auto minmax(0, 1fr) auto;
   resize: both;
   overflow: hidden;
-  border: 1px solid rgba(146, 202, 255, 0.28);
+  border: 1px solid rgba(var(--line-rgb), 0.28);
   border-radius: 8px;
-  background: rgba(6, 16, 26, 0.98);
+  background: rgba(var(--bg-1-rgb), 0.98);
   box-shadow: 0 18px 34px rgba(0, 0, 0, 0.34);
 }
 
 .remote-editor-window.active {
-  border-color: rgba(100, 233, 186, 0.58);
-  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(100, 233, 186, 0.2);
+  border-color: rgba(var(--primary-rgb), 0.58);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(var(--primary-rgb), 0.2);
 }
 
 .remote-editor-window.maximized,
@@ -235,8 +235,8 @@
   justify-content: space-between;
   gap: 12px;
   padding: 9px 10px;
-  border-bottom: 1px solid rgba(146, 202, 255, 0.16);
-  background: rgba(8, 20, 31, 0.96);
+  border-bottom: 1px solid rgba(var(--line-rgb), 0.16);
+  background: rgba(var(--panel-rgb), 0.96);
 }
 
 .remote-editor-head {
@@ -245,7 +245,7 @@
 }
 
 .remote-editor-foot {
-  border-top: 1px solid rgba(146, 202, 255, 0.16);
+  border-top: 1px solid rgba(var(--line-rgb), 0.16);
   border-bottom: none;
   color: var(--muted);
   font-size: 12px;
@@ -301,23 +301,23 @@
 .editor-window-control {
   width: 28px;
   height: 26px;
-  border: 1px solid rgba(146, 202, 255, 0.2);
+  border: 1px solid rgba(var(--line-rgb), 0.2);
   border-radius: 7px;
   color: var(--muted);
-  background: rgba(10, 24, 37, 0.72);
+  background: rgba(var(--panel-rgb), 0.72);
   cursor: pointer;
   line-height: 1;
 }
 
 .editor-window-control:hover:not(:disabled) {
   color: var(--text);
-  border-color: rgba(100, 233, 186, 0.45);
+  border-color: rgba(var(--primary-rgb), 0.45);
 }
 
 .editor-window-control.danger:hover:not(:disabled) {
   color: #fff;
-  border-color: rgba(255, 111, 125, 0.62);
-  background: rgba(138, 31, 47, 0.76);
+  border-color: rgba(var(--danger-rgb), 0.62);
+  background: rgba(var(--danger-rgb), 0.52);
 }
 
 .editor-window-control:disabled {
@@ -334,8 +334,8 @@
   border: none;
   outline: none;
   padding: 12px;
-  color: #e9f5ff;
-  background: rgba(3, 10, 20, 0.96);
+  color: var(--terminal-fg);
+  background: rgba(var(--terminal-bg-rgb, 3, 10, 20), 0.96);
   font-family: 'JetBrains Mono', monospace;
   font-size: 13px;
   line-height: 1.55;
@@ -350,7 +350,7 @@
   min-width: 0;
   min-height: 0;
   height: 100%;
-  background: rgba(3, 10, 20, 0.96);
+  background: rgba(var(--terminal-bg-rgb, 3, 10, 20), 0.96);
 }
 
 .remote-monaco-mount {
@@ -367,7 +367,7 @@
   display: grid;
   place-items: center;
   color: var(--muted);
-  background: rgba(3, 10, 20, 0.82);
+  background: rgba(var(--terminal-bg-rgb, 3, 10, 20), 0.82);
   font-size: 13px;
 }
 
@@ -383,7 +383,7 @@
   display: grid;
   place-items: center;
   padding: 18px;
-  background: rgba(2, 8, 14, 0.72);
+  background: var(--modal-backdrop);
 }
 
 .editor-close-dialog {
@@ -391,9 +391,9 @@
   display: grid;
   gap: 10px;
   padding: 14px;
-  border: 1px solid rgba(146, 202, 255, 0.28);
+  border: 1px solid rgba(var(--line-rgb), 0.28);
   border-radius: 8px;
-  background: rgba(8, 20, 31, 0.98);
+  background: rgba(var(--panel-rgb), 0.98);
   box-shadow: 0 18px 38px rgba(0, 0, 0, 0.38);
 }
 

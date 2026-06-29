@@ -19,6 +19,11 @@
     grid-template-columns: 1fr;
   }
 
+  .theme-grid,
+  .theme-color-grid {
+    grid-template-columns: 1fr;
+  }
+
   .file-row,
   .file-row-head {
     grid-template-columns: 1fr;
