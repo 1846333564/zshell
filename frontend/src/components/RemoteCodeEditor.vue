@@ -1,9 +1,8 @@
 <template>
   <div class="remote-monaco-shell" @mousedown.stop @click.stop @keydown.stop>
     <div v-show="!loadError" ref="editorMount" class="remote-monaco-mount"></div>
-    <div v-if="loading && !loadError" class="remote-editor-loading">{{ loadMessage }}</div>
     <textarea
-      v-if="loadError"
+      v-show="loading || loadError"
       class="remote-editor-textarea remote-editor-fallback"
       :value="modelValue"
       :disabled="disabled"
@@ -13,6 +12,7 @@
       @keydown.meta.s.prevent="emit('save')"
       @focus="emit('focus')"
     ></textarea>
+    <div v-if="loading && !loadError" class="remote-editor-loading">{{ loadMessage }}</div>
   </div>
 </template>
 

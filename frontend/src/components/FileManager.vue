@@ -245,6 +245,47 @@
           @state="setEditorRuntimeState(editorWindow, $event)"
         />
 
+        <div v-if="editorWindow.loading && editorWindow.windowState !== 'minimized'" class="remote-editor-open-progress">
+          <section class="remote-editor-open-card">
+            <div class="remote-editor-open-head">
+              <strong>{{ editorOpenStatus(editorWindow) }}</strong>
+              <span>
+                {{
+                  editorWindow.openProgress?.totalBytes > 0
+                    ? `${Math.min(100, Math.max(0, Math.round(((editorWindow.openProgress?.loadedBytes || 0) / editorWindow.openProgress.totalBytes) * 100)))}%`
+                    : '读取中'
+                }}
+              </span>
+            </div>
+            <div class="progress-track">
+              <span
+                :style="{
+                  width: `${
+                    editorWindow.openProgress?.stage === 'done'
+                      ? 100
+                      : editorWindow.openProgress?.totalBytes > 0
+                        ? Math.min(100, Math.max(0, Math.round(((editorWindow.openProgress?.loadedBytes || 0) / editorWindow.openProgress.totalBytes) * 100)))
+                        : editorWindow.openProgress?.stage === 'preparing'
+                          ? 6
+                          : 12
+                  }%`,
+                }"
+              ></span>
+            </div>
+            <div class="remote-editor-open-meta">
+              <span>{{ editorWindow.openProgress?.message || '正在读取远程文件' }}</span>
+              <span>
+                {{
+                  formatEditorBytes(
+                    editorWindow.openProgress?.loadedBytes || 0,
+                    editorWindow.openProgress?.totalBytes || editorWindow.size || 0,
+                  )
+                }}
+              </span>
+            </div>
+          </section>
+        </div>
+
         <footer v-if="editorWindow.windowState !== 'minimized'" class="remote-editor-foot">
           <span>{{ editorMeta(editorWindow) }}</span>
           <span class="remote-editor-error">{{ editorWindow.error || '\u00A0' }}</span>

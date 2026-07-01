@@ -2,6 +2,9 @@ let scheduled = false;
 let warmupTimer = null;
 let idleHandle = null;
 
+const WARMUP_DELAY_MS = 15000;
+const IDLE_TIMEOUT_MS = 30000;
+
 export function scheduleEditorWarmup() {
   if (scheduled || typeof window === 'undefined') {
     return;
@@ -17,11 +20,11 @@ export function scheduleEditorWarmup() {
     };
 
     if (typeof window.requestIdleCallback === 'function') {
-      idleHandle = window.requestIdleCallback(run, { timeout: 8000 });
+      idleHandle = window.requestIdleCallback(run, { timeout: IDLE_TIMEOUT_MS });
       return;
     }
     run();
-  }, 2400);
+  }, WARMUP_DELAY_MS);
 }
 
 export function cancelEditorWarmup() {

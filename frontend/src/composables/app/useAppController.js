@@ -12,8 +12,10 @@ export function useAppController() {
   const aboutDialog = ref({ visible: false });
   const updates = useUpdateDialog(appInfo);
   const isDragging = ref(false);
+  const appReady = ref(false);
   let moveHandler = null;
   let upHandler = null;
+  let readyTimer = null;
 
   async function loadAppInfo() {
     try {
@@ -106,11 +108,19 @@ export function useAppController() {
     ui.loadUIPreferences();
     updates.scheduleStartupUpdateCheck();
     scheduleEditorWarmup();
+    readyTimer = window.setTimeout(() => {
+      appReady.value = true;
+      readyTimer = null;
+    }, 900);
     window.addEventListener('keydown', ui.handleGlobalKeydown, true);
   });
 
   onBeforeUnmount(() => {
     document.body.style.userSelect = '';
+    if (readyTimer) {
+      window.clearTimeout(readyTimer);
+      readyTimer = null;
+    }
     window.removeEventListener('keydown', ui.handleGlobalKeydown, true);
     updates.cleanupUpdateDialog();
     cancelEditorWarmup();
@@ -129,6 +139,7 @@ export function useAppController() {
     ...updates,
     appInfo,
     aboutDialog,
+    appReady,
     isDragging,
     showAboutDialog,
     hideAboutDialog,

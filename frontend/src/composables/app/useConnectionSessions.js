@@ -21,6 +21,10 @@ export function useConnectionSessions() {
   const activeSession = computed(() => sessions.value.find((item) => item.connectionId === activeSessionId.value) || null);
 
   async function handleConnect(payload) {
+    if (busy.value || configLoading.value) {
+      return;
+    }
+
     busy.value = true;
     connectError.value = '';
     configError.value = '';
@@ -43,6 +47,10 @@ export function useConnectionSessions() {
   }
 
   async function connectFromSaved(item) {
+    if (busy.value || configLoading.value || !item?.id) {
+      return;
+    }
+
     busy.value = true;
     connectError.value = '';
     configError.value = '';
@@ -117,6 +125,10 @@ export function useConnectionSessions() {
   }
 
   async function removeSavedConnection(item) {
+    if (busy.value || configLoading.value || !item?.id) {
+      return;
+    }
+
     if (!window.confirm(`删除连接 "${item.name}"？`)) {
       return;
     }

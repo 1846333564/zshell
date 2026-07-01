@@ -31,6 +31,8 @@ printf 'cpu_cores=%s\n' "$cores"
 printf 'cpu_model=%s\n' "$model"
 printf 'memory_kb=%s\n' "$memkb"`
 
+const sharedClientProbeTimeout = 800 * time.Millisecond
+
 var sharedClients sync.Map
 
 type sharedClient struct {
@@ -190,8 +192,21 @@ func parsePositiveInt(value string) int {
 }
 
 func sshClientAlive(client *ssh.Client) bool {
-	_, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
-	return err == nil
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
+		done <- err
+	}()
+
+	timer := time.NewTimer(sharedClientProbeTimeout)
+	defer timer.Stop()
+
+	select {
+	case err := <-done:
+		return err == nil
+	case <-timer.C:
+		return false
+	}
 }
 
 func sharedClientKey(conn model.Connection) string {

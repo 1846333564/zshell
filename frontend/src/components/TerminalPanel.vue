@@ -188,7 +188,13 @@ async function connect() {
     },
   });
 
-  await wsClient.waitUntilOpen();
+  try {
+    await wsClient.waitUntilOpen();
+  } catch (error) {
+    online.value = false;
+    const message = error instanceof Error ? error.message : 'websocket connect failed';
+    term.writeln(`\r\n[error] ${message}`);
+  }
 }
 
 function disconnect() {

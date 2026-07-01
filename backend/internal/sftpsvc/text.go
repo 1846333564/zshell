@@ -24,15 +24,9 @@ func ReadTextFileWithProgress(conn model.Connection, remotePath string, timeout 
 		Message: "正在准备读取远程文件",
 	})
 
-	client, err := sshsvc.SharedClient(conn, timeout)
+	sftpClient, err := textSFTPClient(conn, timeout)
 	if err != nil {
 		return TextFile{}, err
-	}
-
-	sftpClient, err := sftp.NewClient(client)
-	if err != nil {
-		sshsvc.DropSharedClient(conn)
-		return TextFile{}, fmt.Errorf("create sftp client: %w", err)
 	}
 	defer sftpClient.Close()
 
@@ -148,15 +142,9 @@ func WriteTextFile(conn model.Connection, remotePath string, content string, tim
 		return TextFile{}, fmt.Errorf("edited content is too large: %d bytes", len([]byte(content)))
 	}
 
-	client, err := sshsvc.SharedClient(conn, timeout)
+	sftpClient, err := textSFTPClient(conn, timeout)
 	if err != nil {
 		return TextFile{}, err
-	}
-
-	sftpClient, err := sftp.NewClient(client)
-	if err != nil {
-		sshsvc.DropSharedClient(conn)
-		return TextFile{}, fmt.Errorf("create sftp client: %w", err)
 	}
 	defer sftpClient.Close()
 
@@ -190,4 +178,28 @@ func WriteTextFile(conn model.Connection, remotePath string, content string, tim
 		Content: content,
 		ModTime: stat.ModTime().UTC().Format(time.RFC3339),
 	}, nil
+}
+
+func textSFTPClient(conn model.Connection, timeout time.Duration) (*sftp.Client, error) {
+	client, err := sshsvc.SharedClient(conn, timeout)
+	if err != nil {
+		return nil, err
+	}
+
+	sftpClient, err := sftp.NewClient(client)
+	if err == nil {
+		return sftpClient, nil
+	}
+
+	sshsvc.DropSharedClient(conn)
+	client, retryErr := sshsvc.SharedClient(conn, timeout)
+	if retryErr != nil {
+		return nil, fmt.Errorf("create sftp client: %w; reconnect failed: %w", err, retryErr)
+	}
+	sftpClient, retryErr = sftp.NewClient(client)
+	if retryErr != nil {
+		sshsvc.DropSharedClient(conn)
+		return nil, fmt.Errorf("create sftp client after reconnect: %w", retryErr)
+	}
+	return sftpClient, nil
 }

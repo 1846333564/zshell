@@ -88,9 +88,9 @@
                     <span>{{ item.host }}:{{ item.port }} · {{ item.username }} · {{ authLabel(item.authMethod) }} · {{ workModeLabel(item.workMode) }}</span>
                   </div>
                   <div class="history-actions">
-                    <button class="mini-btn" :disabled="busy" @click="connectFromSaved(item)">连接</button>
-                    <button class="mini-btn" :disabled="busy" @click="editSavedConnection(item)">编辑</button>
-                    <button class="mini-btn danger" :disabled="busy" @click="removeSavedConnection(item)">删除</button>
+                    <button class="mini-btn" :disabled="busy || configLoading || !appReady" @click="connectFromSaved(item)">连接</button>
+                    <button class="mini-btn" :disabled="busy || configLoading || !appReady" @click="editSavedConnection(item)">编辑</button>
+                    <button class="mini-btn danger" :disabled="busy || configLoading || !appReady" @click="removeSavedConnection(item)">删除</button>
                   </div>
                 </article>
               </div>
@@ -98,7 +98,7 @@
 
             <section class="connect-form-pane">
               <ConnectionForm
-                :busy="busy"
+                :busy="busy || configLoading || !appReady"
                 :error="connectError || configError"
                 :initial-value="draftConnection"
                 :mode="editingConnectionId ? 'edit' : 'create'"
@@ -280,6 +280,7 @@ const {
   activeSession,
   activeSessionId,
   activeTheme,
+  appReady,
   appInfo,
   aboutDialog,
   busy,

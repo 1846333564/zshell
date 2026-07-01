@@ -72,7 +72,7 @@ func main() {
 		EnableDefaultContextMenu: true,
 		Windows: &windows.Options{
 			Theme:                windows.Dark,
-			WebviewGpuIsDisabled: false,
+			WebviewGpuIsDisabled: true,
 			IsZoomControlEnabled: true,
 			DisablePinchZoom:     false,
 			ResizeDebounceMS:     120,
