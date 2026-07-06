@@ -2,7 +2,7 @@
 
 ## 项目概览
 
-zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/WebView2、Vue、xterm.js、Monaco Editor 和基于 SSH 的 SFTP。当前版本从 `VERSION` 文件读取，本次版本为 `0.3.9`，版本号从 `0.0.1` 起步。发布产物输出到项目根目录的 `release` 文件夹，命名格式为 `zshell.<版本号>.exe`；本地 `release` 历史包不会自动删除。
+zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/WebView2、Vue、xterm.js、Monaco Editor 和基于 SSH 的 SFTP。当前版本从 `VERSION` 文件读取，本次版本为 `0.3.10`，版本号从 `0.0.1` 起步。发布产物输出到项目根目录的 `release` 文件夹，命名格式为 `zshell.<版本号>.exe`；本地 `release` 历史包不会自动删除。
 
 ## 当前架构
 
@@ -14,7 +14,7 @@ zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/Web
 - `backend/internal/configstore` 使用 Windows DPAPI 在当前用户配置目录中加密保存连接配置。
 - `frontend/src/App.vue` 管理双栏桌面壳：左侧监控面板、右侧连接标签、终端和文件区域，并提供“关于 zShell”和“检查更新”弹窗。
 - `build-windows.ps1` 是 release 构建入口，会失败即停地执行 npm、Go 和 Wails 命令，读取 `VERSION`，并输出当前版本 exe 到 `release` 文件夹，不清理旧版本 exe。
-- `.github/workflows/release.yml` 用 GitHub Actions 在 tag 或手动触发时构建 Windows exe，并创建或更新 GitHub Release 资产；`.github/release-names.json` 可为指定版本配置 Release 标题，本次 `0.3.9` 已配置“修复文件编辑器加载和启动连接崩溃”标题。
+- `.github/workflows/release.yml` 用 GitHub Actions 在 tag 或手动触发时构建 Windows exe，并创建或更新 GitHub Release 资产；`.github/release-names.json` 可为指定版本配置 Release 标题，本次 `0.3.10` 已配置“增加应用更新停止功能”标题。
 - 后端大文件已按同包功能拆分，HTTP API、SFTP 和更新服务的 Go 源文件都控制在 300 行以内；前端大组件和样式已拆分为组合函数与 CSS 分包，业务源码都控制在 500 行以内。
 - `backend/internal/logsvc` 在启动时初始化日志系统，日志写入当前用户配置目录 `%AppData%\zShell\log`，按小时生成 `zshell-YYYYMMDD-HH.log`，并在每次启动时清理 24 小时以前的日志文件。
 
@@ -25,7 +25,7 @@ zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/Web
 - SFTP 浏览、上传、下载、归档下载、远程文本读写、远程复制/移动和选中项强制删除；常用 SFTP 操作复用共享 SSH 客户端减少重复握手，共享 SSH 活性探测有短超时，在线编辑创建 SFTP 客户端失败时会丢弃旧连接后重试一次；上传会先批量创建远程目录，再对大量小文件执行有界并发 SFTP 写入并持续回传进度，在线编辑读取进度由后端按真实 SFTP 字节流式回传，同服务器复制/移动走远端 `cp`/`mv` 快路径，同服务器删除走远端 `rm -rf` 快路径，跨服务器传输保留 SFTP 流式复制；复制粘贴会避开源路径和已有同名目标，避免表现成剪切或覆盖。
 - Wails Windows 可执行文件打包。
 - 基于 `VERSION` 的版本号管理；默认后续版本只递增最后一位。
-- GitHub Release 更新检查和自更新链路，包含 API 限流 fallback、下载重试、校验、手动下载入口，以及应用更新时的流式阶段进度、下载字节进度和重试日志。
+- GitHub Release 更新检查和自更新链路，包含 API 限流 fallback、下载重试、校验、手动下载入口，以及应用更新时的流式阶段进度、下载字节进度、重试日志和停止更新能力；停止会取消流式更新请求，后端收到上下文取消后清理临时下载文件且不会进入替换重启。
 - Linux 监控快照 API 和左侧监控 UI；左侧监控 1 秒自动刷新，展示服务器基础参数、服务器时间、CPU/内存/磁盘、进程、分区和上下行网速折线图，网速图只显示峰值并带左侧纵轴刻度。
 - 10000 以上动态后端端口。
 - 后端管理的保存连接配置增删改查，配置使用 Windows DPAPI 加密落盘。

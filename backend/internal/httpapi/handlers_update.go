@@ -30,6 +30,10 @@ func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
 
 	result, err := s.update.Apply(r.Context())
 	if err != nil {
+		if updatesvc.IsStopped(err) {
+			writeError(w, http.StatusRequestTimeout, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
@@ -66,6 +70,13 @@ func (s *Server) handleUpdateApplyStream(w http.ResponseWriter, r *http.Request)
 		})
 	})
 	if err != nil {
+		if updatesvc.IsStopped(err) {
+			writeEvent(map[string]any{
+				"type":    "stopped",
+				"message": err.Error(),
+			})
+			return
+		}
 		logsvc.Error("应用更新流式执行失败", err)
 		writeEvent(map[string]any{
 			"type":  "error",

@@ -37,12 +37,18 @@ func explainCheckError(err error) error {
 	if err == nil {
 		return nil
 	}
+	if IsStopped(err) {
+		return err
+	}
 	return fmt.Errorf("检查 GitHub Release 失败。GitHub API 可能被限流，或当前网络无法访问 GitHub。请稍后重试，或手动打开 %s 下载最新版本。原始错误：%w", manualReleaseURL(), err)
 }
 
 func explainDownloadError(action string, downloadURL string, err error) error {
 	if err == nil {
 		return nil
+	}
+	if IsStopped(err) {
+		return err
 	}
 	return fmt.Errorf("%s：无法稳定连接 GitHub Release 下载地址。请检查网络或代理后重试，或手动下载 %s。原始错误：%w", action, downloadURL, err)
 }

@@ -17,6 +17,9 @@ import (
 func (s *Service) downloadExecutable(ctx context.Context, asset githubAsset, report ProgressReporter) (string, string, error) {
 	var lastErr error
 	for attempt := 1; attempt <= updateDownloadAttempts; attempt++ {
+		if stopErr := stopIfCanceled(ctx); stopErr != nil {
+			return "", "", stopErr
+		}
 		reportProgress(report, ProgressEvent{
 			Stage:       "downloading",
 			Percent:     30,
@@ -33,8 +36,8 @@ func (s *Service) downloadExecutable(ctx context.Context, asset githubAsset, rep
 			return target, digest, nil
 		}
 		lastErr = err
-		if ctx.Err() != nil {
-			break
+		if stopErr := stopIfCanceled(ctx); stopErr != nil {
+			return "", "", stopErr
 		}
 		reportProgress(report, ProgressEvent{
 			Stage:       "retrying",
@@ -60,6 +63,9 @@ func (s *Service) downloadExecutableOnce(ctx context.Context, asset githubAsset,
 
 	resp, err := s.client.Do(req)
 	if err != nil {
+		if stopErr := stopIfCanceled(ctx); stopErr != nil {
+			return "", "", stopErr
+		}
 		return "", "", fmt.Errorf("download update: %w", err)
 	}
 	defer resp.Body.Close()
@@ -111,6 +117,9 @@ func (s *Service) downloadExecutableOnce(ctx context.Context, asset githubAsset,
 	})
 	if _, err := io.CopyBuffer(io.MultiWriter(file, hash), progress, make([]byte, 256*1024)); err != nil {
 		_ = os.Remove(target)
+		if stopErr := stopIfCanceled(ctx); stopErr != nil {
+			return "", "", stopErr
+		}
 		return "", "", fmt.Errorf("write update temp file: %w", err)
 	}
 	reportProgress(report, ProgressEvent{

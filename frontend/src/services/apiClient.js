@@ -81,24 +81,26 @@ export function checkForUpdate() {
   });
 }
 
-export async function applyUpdate(onProgress) {
+export async function applyUpdate(onProgress, options = {}) {
   if (typeof onProgress === 'function') {
-    return applyUpdateWithProgress(onProgress);
+    return applyUpdateWithProgress(onProgress, options);
   }
 
   return requestJson('/api/update/apply', {
     method: 'POST',
     body: JSON.stringify({}),
+    signal: options.signal,
   });
 }
 
-async function applyUpdateWithProgress(onProgress) {
+async function applyUpdateWithProgress(onProgress, options = {}) {
   const response = await fetch(apiUrl('/api/update/apply/stream'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({}),
+    signal: options.signal,
   });
 
   if (!response.ok) {
@@ -132,6 +134,9 @@ async function applyUpdateWithProgress(onProgress) {
       if (event.type === 'error') {
         throw new Error(event.error || '更新失败');
       }
+      if (event.type === 'stopped') {
+        throw updateStoppedError(event.message);
+      }
       if (event.type === 'result') {
         result = event.update || {};
       }
@@ -148,6 +153,8 @@ async function applyUpdateWithProgress(onProgress) {
       onProgress(event.progress || {});
     } else if (event.type === 'error') {
       throw new Error(event.error || '更新失败');
+    } else if (event.type === 'stopped') {
+      throw updateStoppedError(event.message);
     } else if (event.type === 'result') {
       result = event.update || {};
     }
@@ -433,4 +440,10 @@ function parseJson(value) {
   } catch {
     return {};
   }
+}
+
+function updateStoppedError(message) {
+  const error = new Error(message || '更新已停止');
+  error.name = 'AbortError';
+  return error;
 }

@@ -151,7 +151,7 @@
           </div>
 
           <footer class="dialog-actions">
-            <button class="small-btn" type="button" :disabled="updateDialog.status === 'checking' || updateDialog.status === 'applying'" @click="checkUpdatesFromAbout">
+            <button class="small-btn" type="button" :disabled="updateDialog.status === 'checking' || updateDialog.status === 'applying' || updateDialog.status === 'stopping'" @click="checkUpdatesFromAbout">
               检查更新
             </button>
             <button class="small-btn" type="button" @click="hideAboutDialog">关闭</button>
@@ -222,7 +222,7 @@
               <strong>{{ updateDialog.title }}</strong>
               <span>{{ updateDialog.subtitle }}</span>
             </div>
-            <button type="button" class="dialog-close" :disabled="updateDialog.status === 'applying'" @click="closeUpdateDialog">×</button>
+            <button type="button" class="dialog-close" :disabled="updateDialog.status === 'applying' || updateDialog.status === 'stopping'" @click="closeUpdateDialog">×</button>
           </header>
 
           <div class="dialog-body">
@@ -255,13 +255,14 @@
               v-if="updateDialog.available"
               class="small-btn"
               type="button"
-              :disabled="updateDialog.status === 'applying'"
+              :disabled="updateDialog.status === 'applying' || updateDialog.status === 'stopping'"
               @click="confirmApplyUpdate"
             >
               确认更新
             </button>
+            <button v-if="updateDialog.canStop" class="small-btn danger" type="button" @click="stopApplyUpdate">停止</button>
             <button v-if="updateDialog.releaseUrl" class="small-btn" type="button" @click="openReleasePage">打开下载页</button>
-            <button class="small-btn" type="button" :disabled="updateDialog.status === 'applying'" @click="closeUpdateDialog">关闭</button>
+            <button class="small-btn" type="button" :disabled="updateDialog.status === 'applying' || updateDialog.status === 'stopping'" @click="closeUpdateDialog">关闭</button>
           </footer>
         </section>
       </div>
@@ -316,6 +317,7 @@ const {
   showConnectHome,
   showThemeDialog,
   startDrag,
+  stopApplyUpdate,
   terminalFontSize,
   themeColorFields,
   themeDialog,

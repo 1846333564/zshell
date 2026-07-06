@@ -29,6 +29,9 @@ func (s *Service) latestRelease(ctx context.Context, report ProgressReporter) (g
 
 	resp, err := s.client.Do(req)
 	if err != nil {
+		if stopErr := stopIfCanceled(ctx); stopErr != nil {
+			return githubRelease{}, stopErr
+		}
 		return githubRelease{}, fmt.Errorf("check github release: %w", err)
 	}
 	defer resp.Body.Close()
@@ -92,6 +95,9 @@ func (s *Service) latestReleaseByRedirect(ctx context.Context, report ProgressRe
 
 	resp, err := s.client.Do(req)
 	if err != nil {
+		if stopErr := stopIfCanceled(ctx); stopErr != nil {
+			return githubRelease{}, stopErr
+		}
 		return githubRelease{}, fmt.Errorf("check github release page: %w", err)
 	}
 	defer resp.Body.Close()

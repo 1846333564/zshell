@@ -49,6 +49,9 @@ func (s *Service) findSHA256Digest(ctx context.Context, assets []githubAsset, ex
 func (s *Service) downloadSHA256(ctx context.Context, url string, exeName string, report ProgressReporter) (string, error) {
 	var lastErr error
 	for attempt := 1; attempt <= updateDownloadAttempts; attempt++ {
+		if stopErr := stopIfCanceled(ctx); stopErr != nil {
+			return "", stopErr
+		}
 		reportProgress(report, ProgressEvent{
 			Stage:       "checksum",
 			Percent:     85,
@@ -74,8 +77,8 @@ func (s *Service) downloadSHA256(ctx context.Context, url string, exeName string
 			return digest, nil
 		}
 		lastErr = err
-		if ctx.Err() != nil {
-			break
+		if stopErr := stopIfCanceled(ctx); stopErr != nil {
+			return "", stopErr
 		}
 		reportProgress(report, ProgressEvent{
 			Stage:       "retrying",
@@ -101,6 +104,9 @@ func (s *Service) downloadSHA256Once(ctx context.Context, url string, exeName st
 
 	resp, err := s.client.Do(req)
 	if err != nil {
+		if stopErr := stopIfCanceled(ctx); stopErr != nil {
+			return "", stopErr
+		}
 		return "", fmt.Errorf("download checksum: %w", err)
 	}
 	defer resp.Body.Close()
@@ -111,6 +117,9 @@ func (s *Service) downloadSHA256Once(ctx context.Context, url string, exeName st
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if err != nil {
+		if stopErr := stopIfCanceled(ctx); stopErr != nil {
+			return "", stopErr
+		}
 		return "", fmt.Errorf("read checksum: %w", err)
 	}
 	for _, line := range strings.Split(string(data), "\n") {

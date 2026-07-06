@@ -1,6 +1,8 @@
 package updatesvc
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -48,6 +50,23 @@ func TestExplainDownloadErrorIncludesManualURL(t *testing.T) {
 	got := err.Error()
 	if !containsAll(got, []string{"下载更新失败", "https://example.test/zshell.exe", "timeout"}) {
 		t.Fatalf("error message %q does not include expected context", got)
+	}
+}
+
+func TestStopIfCanceledReturnsStoppedError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := stopIfCanceled(ctx)
+	if !errors.Is(err, ErrStopped) {
+		t.Fatalf("stopIfCanceled() = %v, want ErrStopped", err)
+	}
+}
+
+func TestExplainDownloadErrorKeepsStoppedError(t *testing.T) {
+	err := explainDownloadError("下载更新失败", "https://example.test/zshell.exe", ErrStopped)
+	if !errors.Is(err, ErrStopped) {
+		t.Fatalf("explainDownloadError() = %v, want ErrStopped", err)
 	}
 }
 

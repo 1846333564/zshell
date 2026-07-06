@@ -64,6 +64,14 @@ func (s *Service) ApplyWithProgress(ctx context.Context, report ProgressReporter
 
 	release, err := s.latestRelease(ctx, report)
 	if err != nil {
+		if stopErr := stopIfCanceled(ctx); stopErr != nil {
+			reportProgress(report, ProgressEvent{
+				Stage:   "stopped",
+				Percent: 0,
+				Message: ErrStopped.Error(),
+			})
+			return ApplyResult{}, stopErr
+		}
 		return ApplyResult{}, explainCheckError(err)
 	}
 
@@ -113,7 +121,23 @@ func (s *Service) ApplyWithProgress(ctx context.Context, report ProgressReporter
 
 	downloadPath, digest, err := s.downloadExecutable(ctx, asset, report)
 	if err != nil {
+		if IsStopped(err) {
+			reportProgress(report, ProgressEvent{
+				Stage:   "stopped",
+				Percent: 0,
+				Message: ErrStopped.Error(),
+			})
+		}
 		return ApplyResult{}, err
+	}
+	if stopErr := stopIfCanceled(ctx); stopErr != nil {
+		_ = os.Remove(downloadPath)
+		reportProgress(report, ProgressEvent{
+			Stage:   "stopped",
+			Percent: 82,
+			Message: ErrStopped.Error(),
+		})
+		return ApplyResult{}, stopErr
 	}
 
 	expectedDigest := assetDigest(asset)
@@ -129,8 +153,24 @@ func (s *Service) ApplyWithProgress(ctx context.Context, report ProgressReporter
 		expectedDigest, err = s.findSHA256Digest(ctx, release.Assets, asset.Name, report)
 		if err != nil {
 			_ = os.Remove(downloadPath)
+			if IsStopped(err) {
+				reportProgress(report, ProgressEvent{
+					Stage:   "stopped",
+					Percent: 84,
+					Message: ErrStopped.Error(),
+				})
+			}
 			return ApplyResult{}, err
 		}
+	}
+	if stopErr := stopIfCanceled(ctx); stopErr != nil {
+		_ = os.Remove(downloadPath)
+		reportProgress(report, ProgressEvent{
+			Stage:   "stopped",
+			Percent: 88,
+			Message: ErrStopped.Error(),
+		})
+		return ApplyResult{}, stopErr
 	}
 	if expectedDigest != "" && !strings.EqualFold(digest, expectedDigest) {
 		_ = os.Remove(downloadPath)
@@ -144,6 +184,15 @@ func (s *Service) ApplyWithProgress(ctx context.Context, report ProgressReporter
 		AssetName:     asset.Name,
 		LatestVersion: latestVersion,
 	})
+	if stopErr := stopIfCanceled(ctx); stopErr != nil {
+		_ = os.Remove(downloadPath)
+		reportProgress(report, ProgressEvent{
+			Stage:   "stopped",
+			Percent: 90,
+			Message: ErrStopped.Error(),
+		})
+		return ApplyResult{}, stopErr
+	}
 
 	reportProgress(report, ProgressEvent{
 		Stage:         "scheduling",

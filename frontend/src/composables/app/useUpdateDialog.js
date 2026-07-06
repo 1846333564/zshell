@@ -6,6 +6,8 @@ const releaseLatestURL = 'https://github.com/1846333564/zshell/releases/latest';
 export function useUpdateDialog(appInfo) {
   const updateDialog = ref(defaultUpdateDialog());
   let startupUpdateTimer = null;
+  let updateAbortController = null;
+  let stopUpdateRequested = false;
   let updateProgressLogKey = '';
 
   async function checkUpdatesFromAbout() {
@@ -64,10 +66,16 @@ export function useUpdateDialog(appInfo) {
   }
 
   async function confirmApplyUpdate() {
+    if (updateDialog.value.status === 'applying' || updateDialog.value.status === 'stopping') {
+      return;
+    }
+    updateAbortController = new AbortController();
+    stopUpdateRequested = false;
     updateDialog.value = {
       ...updateDialog.value,
       status: 'applying',
       showProgress: true,
+      canStop: true,
       progress: 2,
       progressLabel: '准备更新',
       detail: '正在初始化更新任务',
@@ -79,7 +87,7 @@ export function useUpdateDialog(appInfo) {
     updateProgressLogKey = '';
 
     try {
-      const result = await applyUpdate(handleUpdateProgress);
+      const result = await applyUpdate(handleUpdateProgress, { signal: updateAbortController.signal });
       const update = result.update || {};
       if (update.message === '当前已经是最新版本') {
         updateDialog.value = {
@@ -87,6 +95,7 @@ export function useUpdateDialog(appInfo) {
           status: 'done',
           available: false,
           title: '已经是最新版本',
+          canStop: false,
           progress: 100,
           progressLabel: '无需更新',
           detail: `当前版本 ${update.currentVersion || appInfo.value.version || '0.0.1'}`,
@@ -101,6 +110,7 @@ export function useUpdateDialog(appInfo) {
         status: 'applying',
         available: false,
         title: '正在重启',
+        canStop: false,
         progress: 100,
         progressLabel: '准备重启',
         detail: '替换脚本已启动',
@@ -109,19 +119,65 @@ export function useUpdateDialog(appInfo) {
       };
       pushUpdateLog('更新准备完成，即将重启', 'done');
     } catch (error) {
+      if (stopUpdateRequested || isAbortError(error)) {
+        markUpdateStopped();
+        return;
+      }
       const message = error instanceof Error ? error.message : '更新失败';
       pushUpdateLog(`更新失败：${message}`, `error:${message}`);
       updateDialog.value = {
         ...updateDialog.value,
         status: 'error',
+        canStop: false,
         error: message,
         message: '更新未完成。',
         releaseUrl: updateDialog.value.releaseUrl || releaseLatestURL,
       };
+    } finally {
+      updateAbortController = null;
+      stopUpdateRequested = false;
     }
   }
 
+  function stopApplyUpdate() {
+    if (!updateDialog.value.canStop) {
+      return;
+    }
+    stopUpdateRequested = true;
+    updateAbortController?.abort();
+    pushUpdateLog('已请求停止更新', 'stop-requested');
+    updateDialog.value = {
+      ...updateDialog.value,
+      status: 'stopping',
+      canStop: false,
+      progressLabel: '正在停止',
+      detail: '正在中断更新请求',
+      transferText: '',
+      message: '正在停止更新，请稍候。',
+      error: '',
+    };
+  }
+
+  function markUpdateStopped() {
+    pushUpdateLog('更新已停止', 'stopped');
+    updateDialog.value = {
+      ...updateDialog.value,
+      status: 'stopped',
+      available: true,
+      title: '更新已停止',
+      canStop: false,
+      progressLabel: '已停止',
+      detail: '可以重新确认更新',
+      transferText: '',
+      message: '更新已停止，临时下载文件会被清理。',
+      error: '',
+    };
+  }
+
   function handleUpdateProgress(progress) {
+    if (stopUpdateRequested) {
+      return;
+    }
     const percent = clampProgress(progress.percent);
     const transferText = updateProgressTransferText(progress);
     const detailParts = [];
@@ -138,6 +194,7 @@ export function useUpdateDialog(appInfo) {
     updateDialog.value = {
       ...updateDialog.value,
       showProgress: true,
+      canStop: !isFinalUpdateStage(progress.stage),
       progress: percent,
       progressLabel: progress.message || updateDialog.value.progressLabel || '正在更新',
       detail: detailParts.join(' · '),
@@ -193,7 +250,7 @@ export function useUpdateDialog(appInfo) {
   }
 
   function closeUpdateDialog() {
-    if (updateDialog.value.status === 'applying') {
+    if (updateDialog.value.status === 'applying' || updateDialog.value.status === 'stopping') {
       return;
     }
     updateProgressLogKey = '';
@@ -209,12 +266,14 @@ export function useUpdateDialog(appInfo) {
     if (startupUpdateTimer) {
       window.clearTimeout(startupUpdateTimer);
     }
+    updateAbortController?.abort();
   }
 
   return {
     updateDialog,
     checkUpdatesFromAbout,
     confirmApplyUpdate,
+    stopApplyUpdate,
     scheduleStartupUpdateCheck,
     closeUpdateDialog,
     openReleasePage,
@@ -228,6 +287,7 @@ function defaultUpdateDialog() {
     status: 'idle',
     available: false,
     showProgress: false,
+    canStop: false,
     progress: 0,
     progressLabel: '准备更新',
     detail: '',
@@ -248,6 +308,14 @@ function updateProgressLogKeyFor(progress) {
     return `${progress.stage}:${progress.attempt || 0}:${Math.floor(percent / 5) * 5}`;
   }
   return `${progress.stage || 'progress'}:${progress.message || ''}:${progress.attempt || 0}`;
+}
+
+function isFinalUpdateStage(stage) {
+  return stage === 'scheduling' || stage === 'restarting' || stage === 'done' || stage === 'stopped';
+}
+
+function isAbortError(error) {
+  return error && error.name === 'AbortError';
 }
 
 function progressLogText(progress, percent) {
