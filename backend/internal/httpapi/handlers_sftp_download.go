@@ -7,7 +7,7 @@ import (
 	"path"
 	"strings"
 
-	"zshell/backend/internal/sftpsvc"
+	"wiShell/backend/internal/sftpsvc"
 )
 
 func (s *Server) handleSFTPDownload(w http.ResponseWriter, r *http.Request) {

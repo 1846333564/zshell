@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/pkg/sftp"
-	"zshell/backend/internal/model"
-	"zshell/backend/internal/sshsvc"
+	"wiShell/backend/internal/model"
+	"wiShell/backend/internal/sshsvc"
 )
 
 func ArchiveItems(conn model.Connection, remotePaths []string, target io.Writer, timeout time.Duration) error {

@@ -1,4 +1,4 @@
-# zShell - 第 3 步
+# wiShell - 第 3 步
 
 ## 已实现内容
 
@@ -15,7 +15,7 @@
 
 ```powershell
 cd backend
-go run ./cmd/zshell
+go run ./cmd/wiShell
 ```
 
 2. 在另一个终端启动前端：

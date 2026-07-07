@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"zshell/backend/internal/logsvc"
+	"wiShell/backend/internal/logsvc"
 )
 
 func decodeJSON(r *http.Request, out any) error {

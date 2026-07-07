@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
-	"zshell/backend/internal/model"
+	"wiShell/backend/internal/model"
 )
 
 type InteractiveShell struct {

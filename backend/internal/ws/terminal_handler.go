@@ -11,9 +11,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"zshell/backend/internal/logsvc"
-	"zshell/backend/internal/sshsvc"
-	"zshell/backend/internal/store"
+	"wiShell/backend/internal/logsvc"
+	"wiShell/backend/internal/sshsvc"
+	"wiShell/backend/internal/store"
 
 	"github.com/gorilla/websocket"
 )

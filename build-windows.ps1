@@ -8,7 +8,7 @@ $embeddedApp = Join-Path $backendDir 'internal\web\app'
 $versionPath = Join-Path $root 'VERSION'
 $version = (Get-Content -LiteralPath $versionPath -Raw).Trim()
 $releaseDir = Join-Path $root 'release'
-$outputExe = Join-Path $releaseDir "zshell.$version.exe"
+$outputExe = Join-Path $releaseDir "wiShell.$version.exe"
 
 if ($version -notmatch '^\d+\.\d+\.\d+$') {
   throw "Invalid VERSION value: $version"
@@ -54,9 +54,9 @@ try {
   if (!(Test-Path -LiteralPath $wails)) {
     Invoke-Native 'go install Wails CLI' { go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0 }
   }
-  $ldflags = "-s -w -X zshell/backend/internal/appinfo.Version=$version"
-  Invoke-Native 'wails build' { & $wails build -clean -s -skipbindings -o zshell.exe -webview2 embed -ldflags $ldflags }
-  $builtExe = Join-Path $backendDir 'build\bin\zshell.exe'
+  $ldflags = "-s -w -X wiShell/backend/internal/appinfo.Version=$version"
+  Invoke-Native 'wails build' { & $wails build -clean -s -skipbindings -o wiShell.exe -webview2 embed -ldflags $ldflags }
+  $builtExe = Join-Path $backendDir 'build\bin\wiShell.exe'
   if (!(Test-Path -LiteralPath $builtExe)) {
     throw "Wails build did not produce $builtExe"
   }

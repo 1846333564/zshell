@@ -6,7 +6,7 @@ import (
 	"path"
 	"strings"
 
-	"zshell/backend/internal/sftpsvc"
+	"wiShell/backend/internal/sftpsvc"
 )
 
 func multipartUploadItems(form *multipart.Form) ([]sftpsvc.UploadItem, []string) {
@@ -46,5 +46,5 @@ func archiveName(remotePaths []string) string {
 			return base + ".zip"
 		}
 	}
-	return "zshell-download.zip"
+	return "wiShell-download.zip"
 }

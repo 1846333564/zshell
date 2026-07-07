@@ -14,11 +14,11 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
-	"zshell/backend/internal/appinfo"
-	"zshell/backend/internal/httpapi"
-	"zshell/backend/internal/logsvc"
-	"zshell/backend/internal/store"
-	"zshell/backend/internal/web"
+	"wiShell/backend/internal/appinfo"
+	"wiShell/backend/internal/httpapi"
+	"wiShell/backend/internal/logsvc"
+	"wiShell/backend/internal/store"
+	"wiShell/backend/internal/web"
 )
 
 func main() {
@@ -29,7 +29,7 @@ func main() {
 		defer logger.Close()
 	}
 	defer logsvc.RecoverAndExit("Wails 桌面入口")
-	log.Printf("zShell 启动，版本：%s", appinfo.Version)
+	log.Printf("wiShell 启动，版本：%s", appinfo.Version)
 
 	connectionStore := store.NewMemoryStore()
 	apiServer := httpapi.NewServer(connectionStore, 10*time.Second)
@@ -56,10 +56,10 @@ func main() {
 	}()
 
 	apiBaseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
-	log.Printf("zShell API listening on %s", apiBaseURL)
+	log.Printf("wiShell API listening on %s", apiBaseURL)
 
 	err = wails.Run(&options.App{
-		Title:                    "zShell",
+		Title:                    "wiShell",
 		Width:                    1480,
 		Height:                   920,
 		MinWidth:                 1180,

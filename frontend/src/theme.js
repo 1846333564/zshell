@@ -1,4 +1,4 @@
-export const DEFAULT_THEME_KEY = 'zshell';
+export const DEFAULT_THEME_KEY = 'wiShell';
 export const CUSTOM_THEME_KEY = 'custom';
 
 export const THEME_COLOR_FIELDS = [
@@ -49,7 +49,7 @@ const DEFAULT_COLORS = {
 const THEME_PRESETS = [
   {
     id: DEFAULT_THEME_KEY,
-    name: 'zShell 默认',
+    name: 'wiShell 默认',
     colors: DEFAULT_COLORS,
   },
   {
@@ -399,7 +399,7 @@ export function applyThemeToDocument(theme) {
   setTerminalVariables(root, colors);
 
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('zshell-theme-change', { detail: { theme } }));
+    window.dispatchEvent(new CustomEvent('wiShell-theme-change', { detail: { theme } }));
   }
 }
 

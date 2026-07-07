@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"zshell/backend/internal/appinfo"
+	"wiShell/backend/internal/appinfo"
 )
 
 func reportProgress(report ProgressReporter, event ProgressEvent) {

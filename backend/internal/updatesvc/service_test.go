@@ -32,23 +32,23 @@ func TestCompareVersions(t *testing.T) {
 
 func TestFindExecutableAsset(t *testing.T) {
 	assets := []githubAsset{
-		{Name: "zshell.0.0.1.exe.sha256"},
-		{Name: "zshell.0.0.1.exe", BrowserDownloadURL: "https://example.test/zshell.0.0.1.exe"},
+		{Name: "wiShell.0.0.1.exe.sha256"},
+		{Name: "wiShell.0.0.1.exe", BrowserDownloadURL: "https://example.test/wiShell.0.0.1.exe"},
 	}
 
 	asset := findExecutableAsset(assets, "0.0.1")
-	if asset.Name != "zshell.0.0.1.exe" {
-		t.Fatalf("asset.Name = %q, want zshell.0.0.1.exe", asset.Name)
+	if asset.Name != "wiShell.0.0.1.exe" {
+		t.Fatalf("asset.Name = %q, want wiShell.0.0.1.exe", asset.Name)
 	}
 }
 
 func TestExplainDownloadErrorIncludesManualURL(t *testing.T) {
-	err := explainDownloadError("下载更新失败", "https://example.test/zshell.exe", assertErr("timeout"))
+	err := explainDownloadError("下载更新失败", "https://example.test/wiShell.exe", assertErr("timeout"))
 	if err == nil {
 		t.Fatal("explainDownloadError returned nil")
 	}
 	got := err.Error()
-	if !containsAll(got, []string{"下载更新失败", "https://example.test/zshell.exe", "timeout"}) {
+	if !containsAll(got, []string{"下载更新失败", "https://example.test/wiShell.exe", "timeout"}) {
 		t.Fatalf("error message %q does not include expected context", got)
 	}
 }
@@ -64,7 +64,7 @@ func TestStopIfCanceledReturnsStoppedError(t *testing.T) {
 }
 
 func TestExplainDownloadErrorKeepsStoppedError(t *testing.T) {
-	err := explainDownloadError("下载更新失败", "https://example.test/zshell.exe", ErrStopped)
+	err := explainDownloadError("下载更新失败", "https://example.test/wiShell.exe", ErrStopped)
 	if !errors.Is(err, ErrStopped) {
 		t.Fatalf("explainDownloadError() = %v, want ErrStopped", err)
 	}

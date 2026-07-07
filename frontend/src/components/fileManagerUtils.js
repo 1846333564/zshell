@@ -1,7 +1,7 @@
 export const ROOT_PATH = "/";
 export const HOME_PATH = "~";
 export const WORK_MODE_START_PATHS = { frontend: "/var", backend: "/opt", ops: ROOT_PATH };
-export const CLIPBOARD_KEY = "zshell.remote-file.clipboard.v1";
+export const CLIPBOARD_KEY = "wiShell.remote-file.clipboard.v1";
 export const DEFAULT_FILE_OPEN_ACTION = "textEdit";
 export const CLIPBOARD_ACTIONS = new Set(["copy", "move"]);
 export const FILE_COLUMNS = [
@@ -114,7 +114,7 @@ export function displayPath(value) {
 }
 
 export function downloadArchiveName(entries) {
-  return entries.length === 1 ? `${entries[0].name}.zip` : "zshell-selected.zip";
+  return entries.length === 1 ? `${entries[0].name}.zip` : "wiShell-selected.zip";
 }
 
 export function delay(milliseconds) {

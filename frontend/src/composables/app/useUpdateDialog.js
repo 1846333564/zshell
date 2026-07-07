@@ -115,7 +115,7 @@ export function useUpdateDialog(appInfo) {
         progressLabel: '准备重启',
         detail: '替换脚本已启动',
         transferText: '',
-        message: '更新已准备完成，zShell 即将重启。',
+        message: '更新已准备完成，wiShell 即将重启。',
       };
       pushUpdateLog('更新准备完成，即将重启', 'done');
     } catch (error) {

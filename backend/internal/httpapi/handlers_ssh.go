@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"zshell/backend/internal/sshsvc"
+	"wiShell/backend/internal/sshsvc"
 )
 
 func (s *Server) handleSSHTest(w http.ResponseWriter, r *http.Request) {

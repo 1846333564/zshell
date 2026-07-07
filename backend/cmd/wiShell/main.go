@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"time"
 
-	"zshell/backend/internal/httpapi"
-	"zshell/backend/internal/logsvc"
-	"zshell/backend/internal/store"
-	"zshell/backend/internal/web"
+	"wiShell/backend/internal/httpapi"
+	"wiShell/backend/internal/logsvc"
+	"wiShell/backend/internal/store"
+	"wiShell/backend/internal/web"
 )
 
 func main() {
@@ -43,7 +43,7 @@ func main() {
 	}
 
 	url := fmt.Sprintf("http://127.0.0.1:%d", port)
-	log.Printf("zShell listening on %s", url)
+	log.Printf("wiShell listening on %s", url)
 
 	if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("server failed: %v", err)

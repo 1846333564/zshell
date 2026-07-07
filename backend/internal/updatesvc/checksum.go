@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"zshell/backend/internal/appinfo"
+	"wiShell/backend/internal/appinfo"
 )
 
 func assetDigest(asset githubAsset) string {

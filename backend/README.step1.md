@@ -1,4 +1,4 @@
-# zShell - 第 1 步
+# wiShell - 第 1 步
 
 ## 已实现内容
 
@@ -14,7 +14,7 @@
 
 ```powershell
 go mod tidy
-go run ./cmd/zshell
+go run ./cmd/wiShell
 ```
 
 后端监听地址为 `http://127.0.0.1:8080`。

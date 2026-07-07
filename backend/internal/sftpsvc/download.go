@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/pkg/sftp"
-	"zshell/backend/internal/model"
-	"zshell/backend/internal/sshsvc"
+	"wiShell/backend/internal/model"
+	"wiShell/backend/internal/sshsvc"
 )
 
 func DownloadFile(conn model.Connection, remotePath string, timeout time.Duration) (io.ReadCloser, string, int64, error) {

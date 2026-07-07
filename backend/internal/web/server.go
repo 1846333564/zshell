@@ -47,7 +47,7 @@ func serveIndex(w http.ResponseWriter, dist fs.FS, apiBaseURL string) {
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("<!doctype html><title>zShell</title><body>zShell frontend is not embedded. Run the Windows build script first.</body>"))
+		_, _ = w.Write([]byte("<!doctype html><title>wiShell</title><body>wiShell frontend is not embedded. Run the Windows build script first.</body>"))
 		return
 	}
 
@@ -62,7 +62,7 @@ func injectRuntimeConfig(index []byte, apiBaseURL string) []byte {
 	}
 
 	encoded, _ := json.Marshal(apiBaseURL)
-	script := fmt.Sprintf("<script>window.__ZSHELL_BACKEND_BASE__=%s;</script>", encoded)
+	script := fmt.Sprintf("<script>window.__WISHELL_BACKEND_BASE__=%s;</script>", encoded)
 	content := string(index)
 	if strings.Contains(content, "</head>") {
 		content = strings.Replace(content, "</head>", script+"</head>", 1)

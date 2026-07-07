@@ -2,7 +2,7 @@
 
 ## 范围
 
-集中保存 zShell 产品信息、当前版本号和 GitHub Release 仓库配置。
+集中保存 wiShell 产品信息、当前版本号和 GitHub Release 仓库配置。
 
 ## 重要文件
 

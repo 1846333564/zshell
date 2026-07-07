@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"zshell/backend/internal/model"
-	"zshell/backend/internal/sshsvc"
+	"wiShell/backend/internal/model"
+	"wiShell/backend/internal/sshsvc"
 )
 
 type Service struct {

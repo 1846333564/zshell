@@ -5,14 +5,14 @@ import (
 	"math"
 	"strings"
 
-	"zshell/backend/internal/configstore"
-	"zshell/backend/internal/model"
+	"wiShell/backend/internal/configstore"
+	"wiShell/backend/internal/model"
 )
 
-const defaultThemeKey = "zshell"
+const defaultThemeKey = "wiShell"
 
 var allowedThemeKeys = map[string]struct{}{
-	"zshell":           {},
+	"wiShell":           {},
 	"dracula":          {},
 	"nord":             {},
 	"tokyo-night":      {},

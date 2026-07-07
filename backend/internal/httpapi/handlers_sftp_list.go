@@ -3,7 +3,7 @@ package httpapi
 import (
 	"net/http"
 
-	"zshell/backend/internal/sftpsvc"
+	"wiShell/backend/internal/sftpsvc"
 )
 
 func (s *Server) handleSFTPList(w http.ResponseWriter, r *http.Request) {

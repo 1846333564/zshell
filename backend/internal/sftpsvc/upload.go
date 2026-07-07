@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/pkg/sftp"
-	"zshell/backend/internal/model"
-	"zshell/backend/internal/sshsvc"
+	"wiShell/backend/internal/model"
+	"wiShell/backend/internal/sshsvc"
 )
 
 func UploadFiles(conn model.Connection, remoteDir string, files []UploadItem, directories []string, timeout time.Duration) (UploadBatchResult, error) {

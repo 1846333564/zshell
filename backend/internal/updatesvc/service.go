@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"zshell/backend/internal/appinfo"
+	"wiShell/backend/internal/appinfo"
 )
 
 func NewService() *Service {

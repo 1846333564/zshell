@@ -225,7 +225,7 @@
           </div>
           <div class="remote-editor-actions" @mousedown.stop>
             <span>{{ editorStatus(editorWindow) }}</span>
-            <button class="small-btn" :disabled="!editorDirty(editorWindow) || editorWindow.contentLoading || editorWindow.saving" @click="saveEditor(editorWindow)">保存</button>
+            <button class="small-btn" :disabled="!editorDirty(editorWindow) || editorWindow.contentLoading || editorWindow.editorRuntimeState === 'rendering' || editorWindow.saving" @click="saveEditor(editorWindow)">保存</button>
             <button class="editor-window-control" type="button" title="最小化" :disabled="editorWindow.saving" @click="minimizeEditor(editorWindow)">_</button>
             <button class="editor-window-control" type="button" :title="editorWindow.windowState === 'normal' ? '最大化' : '还原'" :disabled="editorWindow.saving" @click="toggleMaximizeEditor(editorWindow)">
               {{ editorWindow.windowState === 'normal' ? '□' : '❐' }}
@@ -238,7 +238,9 @@
           v-if="editorWindow.windowState !== 'minimized' && editorWindow.openProgress?.stage !== 'error'"
           v-model="editorWindow.content"
           :path="editorWindow.path"
-          :disabled="editorWindow.contentLoading || editorWindow.saving"
+          :append-chunks="editorWindow.contentChunks"
+          :append-version="editorWindow.appendVersion"
+          :disabled="editorWindow.contentLoading || editorWindow.editorRuntimeState === 'rendering' || editorWindow.saving"
           :active="editorWindow.id === activeEditorId"
           @focus="activateEditor(editorWindow.id)"
           @save="saveEditor(editorWindow)"

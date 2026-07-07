@@ -11,7 +11,7 @@
 
 ## 当前状态
 
-Wails 窗口通过 `web.HandlerWithConfig` 加载 Vue 资源，并注入 `window.__ZSHELL_BACKEND_BASE__`，供 HTTP 和 WebSocket 调用使用。
+Wails 窗口通过 `web.HandlerWithConfig` 加载 Vue 资源，并注入 `window.__WISHELL_BACKEND_BASE__`，供 HTTP 和 WebSocket 调用使用。
 
 ## 已知工作
 

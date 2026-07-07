@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"zshell/backend/internal/model"
+	"wiShell/backend/internal/model"
 )
 
 type Store struct {
@@ -33,7 +33,7 @@ func NewDefault() (*Store, error) {
 		return nil, fmt.Errorf("resolve user config dir: %w", err)
 	}
 
-	return &Store{path: filepath.Join(dir, "zShell", "connections.dpapi")}, nil
+	return &Store{path: filepath.Join(dir, "wiShell", "connections.dpapi")}, nil
 }
 
 func (s *Store) Path() string {

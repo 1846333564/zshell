@@ -113,13 +113,13 @@ onMounted(async () => {
 
   resizeObserver.observe(terminalMount.value);
   themeChangeHandler = () => applyTerminalTheme();
-  window.addEventListener('zshell-theme-change', themeChangeHandler);
+  window.addEventListener('wiShell-theme-change', themeChangeHandler);
 });
 
 onBeforeUnmount(() => {
   disconnect();
   if (themeChangeHandler) {
-    window.removeEventListener('zshell-theme-change', themeChangeHandler);
+    window.removeEventListener('wiShell-theme-change', themeChangeHandler);
   }
   resizeObserver?.disconnect();
   term?.dispose();

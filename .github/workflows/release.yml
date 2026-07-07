@@ -1,4 +1,4 @@
-name: 发布 zShell
+name: 发布 wiShell
 
 on:
   push:
@@ -48,7 +48,7 @@ jobs:
             throw "版本号格式无效: $version"
           }
           Set-Content -LiteralPath VERSION -Value $version -NoNewline
-          $releaseTitle = "zShell $version"
+          $releaseTitle = "wiShell $version"
           $releaseNamesPath = ".github\release-names.json"
           if (Test-Path -LiteralPath $releaseNamesPath) {
             $releaseNames = Get-Content -LiteralPath $releaseNamesPath -Raw | ConvertFrom-Json -AsHashtable
@@ -56,9 +56,9 @@ jobs:
               $releaseTitle = [string]$releaseNames[$version]
             }
           }
-          "ZSHELL_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "ZSHELL_TAG=v$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "ZSHELL_RELEASE_TITLE=$releaseTitle" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WISHELL_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WISHELL_TAG=v$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WISHELL_RELEASE_TITLE=$releaseTitle" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: 构建 release 可执行文件
         shell: pwsh
@@ -67,21 +67,21 @@ jobs:
       - name: 生成 SHA256 校验文件
         shell: pwsh
         run: |
-          $exe = "release\zshell.$env:ZSHELL_VERSION.exe"
+          $exe = "release\wiShell.$env:WISHELL_VERSION.exe"
           if (!(Test-Path -LiteralPath $exe)) {
             throw "未找到构建产物: $exe"
           }
           $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  zshell.$env:ZSHELL_VERSION.exe" | Set-Content -LiteralPath "$exe.sha256" -NoNewline
+          "$hash  wiShell.$env:WISHELL_VERSION.exe" | Set-Content -LiteralPath "$exe.sha256" -NoNewline
 
       - name: 准备发布说明
         shell: pwsh
         run: |
           @(
-            "$env:ZSHELL_RELEASE_TITLE",
+            "$env:WISHELL_RELEASE_TITLE",
             "",
             "- Windows 免安装可执行文件",
-            "- 下载 zshell.$env:ZSHELL_VERSION.exe 后可直接运行"
+            "- 下载 wiShell.$env:WISHELL_VERSION.exe 后可直接运行"
           ) | Set-Content -LiteralPath RELEASE_NOTES.md -Encoding utf8
 
       - name: 创建或更新 GitHub Release
@@ -89,12 +89,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $exe = "release\zshell.$env:ZSHELL_VERSION.exe"
+          $exe = "release\wiShell.$env:WISHELL_VERSION.exe"
           $sha = "$exe.sha256"
-          gh release view $env:ZSHELL_TAG *> $null
+          gh release view $env:WISHELL_TAG *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release edit $env:ZSHELL_TAG --title "$env:ZSHELL_RELEASE_TITLE" --notes-file RELEASE_NOTES.md --latest
-            gh release upload $env:ZSHELL_TAG $exe $sha --clobber
+            gh release edit $env:WISHELL_TAG --title "$env:WISHELL_RELEASE_TITLE" --notes-file RELEASE_NOTES.md --latest
+            gh release upload $env:WISHELL_TAG $exe $sha --clobber
           } else {
-            gh release create $env:ZSHELL_TAG $exe $sha --title "$env:ZSHELL_RELEASE_TITLE" --notes-file RELEASE_NOTES.md --latest
+            gh release create $env:WISHELL_TAG $exe $sha --title "$env:WISHELL_RELEASE_TITLE" --notes-file RELEASE_NOTES.md --latest
           }

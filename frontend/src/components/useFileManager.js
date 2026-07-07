@@ -793,6 +793,35 @@ function E(E) {
     ot();
     const n = Wt(e);
     const o = () => Z.value.some((e) => e.id === n.id);
+    let r = "",
+      a = !1,
+      i = null;
+    const s = () => {
+        if (i) return;
+        i = window.requestAnimationFrame
+          ? window.requestAnimationFrame(() => {
+              (i = null), l();
+            })
+          : window.setTimeout(() => {
+              (i = null), l();
+            }, 16);
+      },
+      l = () => {
+        if (!r || !o()) return;
+        const e = r;
+        (r = ""),
+          n.contentChunks.push(e),
+          (n.appendVersion += 1),
+          (n.loadedContentBytes += new Blob([e]).size),
+          (n.message = "\u6b63\u5728\u7ee7\u7eed\u8bfb\u53d6");
+      },
+      c = () => {
+        i &&
+          (window.cancelAnimationFrame
+            ? window.cancelAnimationFrame(i)
+            : window.clearTimeout(i),
+          (i = null));
+      };
     try {
       Gt(n, {
         stage: "preparing",
@@ -812,10 +841,11 @@ function E(E) {
                   if (!o()) return;
                   t.path && (n.path = String(t.path));
                   t.fileName && (n.name = String(t.fileName));
-                  t.text &&
-                    ((n.content += String(t.text)),
-                    (n.originalContent = n.content),
-                    (n.message = "\u6b63\u5728\u7ee7\u7eed\u8bfb\u53d6"));
+                  if (t.text) {
+                    r += String(t.text);
+                    a || ((a = !0), l());
+                    r.length >= 32768 ? (c(), l()) : s();
+                  }
                   (n.size =
                     Number(t.totalBytes) ||
                     Number(t.loadedBytes) ||
@@ -828,16 +858,17 @@ function E(E) {
                       message: "\u6b63\u5728\u8bfb\u53d6\u8fdc\u7a0b\u6587\u4ef6",
                     });
                 },
+                collectContent: !1,
               },
             )
           ).file || {},
-        r = String(t.content ?? n.content ?? "");
+        u = (l(), String(t.content ?? n.contentChunks.join("") ?? ""));
       if (!o()) return;
       (n.path = String(t.path || e.path)),
         (n.name = String(t.name || e.name || Xn(n.path))),
-        (n.content = r),
-        (n.originalContent = r),
-        (n.size = Number(t.size) || new Blob([r]).size),
+        (n.content = u),
+        (n.originalContent = u),
+        (n.size = Number(t.size) || new Blob([u]).size),
         (n.modTime = String(t.modTime || e.modTime || "")),
         (n.contentLoading = !1),
         (n.contentLoaded = !0),
@@ -863,7 +894,7 @@ function E(E) {
           message: n.error,
         });
     } finally {
-      o() && (n.loading = !1);
+      c(), o() && (l(), (n.loading = !1));
     }
   }
   function Wt(e) {
@@ -874,6 +905,9 @@ function E(E) {
         loading: !1,
         contentLoading: !0,
         contentLoaded: !1,
+        contentChunks: [],
+        appendVersion: 0,
+        loadedContentBytes: 0,
         saving: !1,
         path: e.path,
         name: e.name,
@@ -999,7 +1033,14 @@ function E(E) {
       window.removeEventListener("mouseup", Jt));
   }
   async function Qt(e) {
-    if (!E.connectionId || !e || !e.path || e.contentLoading || e.saving)
+    if (
+      !E.connectionId ||
+      !e ||
+      !e.path ||
+      e.contentLoading ||
+      "rendering" === e.editorRuntimeState ||
+      e.saving
+    )
       return !1;
     (e.saving = !0), (e.error = ""), (e.message = "");
     const t = e.content;
@@ -1639,7 +1680,8 @@ function E(E) {
             ? "\u6253\u5f00\u5931\u8d25"
             : e.saving
               ? "\u4fdd\u5b58\u4e2d..."
-              : "loading" === e.editorRuntimeState
+              : "loading" === e.editorRuntimeState ||
+                  "rendering" === e.editorRuntimeState
                 ? Xt(e)
                 : "error" === e.editorRuntimeState
                   ? "\u7f16\u8f91\u5668\u964d\u7ea7"
@@ -1672,7 +1714,13 @@ function E(E) {
       updateEditorOpenProgress: Gt,
       editorMeta: function (e) {
         if (!e) return "";
-        const t = [Gn(new Blob([e.content]).size)];
+        const n = Number(e.openProgress?.loadedBytes) || Number(e.loadedContentBytes) || 0,
+          o = Number(e.openProgress?.totalBytes) || Number(e.size) || 0,
+          t = [
+            e.contentLoading
+              ? qt(n, o)
+              : Gn(Number(e.size) || new Blob([e.content]).size),
+          ];
         return e.modTime && t.push(Zn(e.modTime)), t.join(" \xb7 ");
       },
       editorWindowStyle: function (e) {

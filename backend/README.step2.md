@@ -1,4 +1,4 @@
-# zShell - 第 2 步
+# wiShell - 第 2 步
 
 ## 已实现内容
 
@@ -64,7 +64,7 @@
 
 ```powershell
 go mod tidy
-go run ./cmd/zshell
+go run ./cmd/wiShell
 ```
 
 2. 通过第 1 步 API 创建连接。

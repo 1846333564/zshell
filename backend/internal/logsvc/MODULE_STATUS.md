@@ -12,7 +12,7 @@
 
 ## 当前状态
 
-日志目录为当前用户配置目录下的 `%AppData%\zShell\log`，文件名为 `zshell-YYYYMMDD-HH.log`。每次应用启动时会删除修改时间早于 24 小时的 zShell 日志文件；运行中写日志时会按当前小时自动切换文件。日志事件会保留错误位置和原始错误原因，panic 会附带 stack trace。
+日志目录为当前用户配置目录下的 `%AppData%\wiShell\log`，文件名为 `wiShell-YYYYMMDD-HH.log`。每次应用启动时会删除修改时间早于 24 小时的 wiShell 日志文件；运行中写日志时会按当前小时自动切换文件。日志事件会保留错误位置和原始错误原因，panic 会附带 stack trace。
 
 ## 已知工作
 

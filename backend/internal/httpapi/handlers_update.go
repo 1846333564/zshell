@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"zshell/backend/internal/logsvc"
-	"zshell/backend/internal/updatesvc"
+	"wiShell/backend/internal/logsvc"
+	"wiShell/backend/internal/updatesvc"
 )
 
 func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {

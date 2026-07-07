@@ -3,13 +3,13 @@ package appinfo
 var Version = "0.3.13"
 
 const (
-	ProductName     = "zShell"
+	ProductName     = "wiShell"
 	Company         = "重庆创翼科技有限公司"
 	Developer       = "zly"
 	Channel         = "暂时内测版"
 	GitHubOwner     = "1846333564"
 	GitHubRepo      = "zshell"
-	ReleaseAssetTpl = "zshell.%s.exe"
+	ReleaseAssetTpl = "wiShell.%s.exe"
 )
 
 type Info struct {
@@ -33,5 +33,5 @@ func Current() Info {
 }
 
 func ReleaseAssetName(version string) string {
-	return "zshell." + version + ".exe"
+	return "wiShell." + version + ".exe"
 }

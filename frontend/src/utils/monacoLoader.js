@@ -3,7 +3,7 @@ import { buildMonacoThemeFromDocument } from '../theme';
 let monacoPromise = null;
 let monacoConfigured = false;
 
-export const MONACO_THEME = 'zshell-dark';
+export const MONACO_THEME = 'wiShell-dark';
 
 const EXTENSION_LANGUAGE = {
   bat: 'bat',

@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"zshell/backend/internal/appinfo"
+	"wiShell/backend/internal/appinfo"
 )
 
 func (s *Service) downloadExecutable(ctx context.Context, asset githubAsset, report ProgressReporter) (string, string, error) {
@@ -90,7 +90,7 @@ func (s *Service) downloadExecutableOnce(ctx context.Context, asset githubAsset,
 		MaxAttempts: updateDownloadAttempts,
 	})
 
-	dir := filepath.Join(os.TempDir(), "zshell-update")
+	dir := filepath.Join(os.TempDir(), "wiShell-update")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", "", err
 	}

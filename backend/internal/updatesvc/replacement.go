@@ -16,7 +16,7 @@ func scheduleReplacement(sourcePath string) error {
 		return fmt.Errorf("locate current executable: %w", err)
 	}
 
-	scriptPath := filepath.Join(os.TempDir(), fmt.Sprintf("zshell-apply-update-%d.ps1", time.Now().UnixNano()))
+	scriptPath := filepath.Join(os.TempDir(), fmt.Sprintf("wiShell-apply-update-%d.ps1", time.Now().UnixNano()))
 	script := fmt.Sprintf(`$ErrorActionPreference = 'Stop'
 $source = '%s'
 $target = '%s'

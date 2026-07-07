@@ -5,11 +5,11 @@ import (
 	"net/http"
 	"time"
 
-	"zshell/backend/internal/configstore"
-	"zshell/backend/internal/monitorsvc"
-	"zshell/backend/internal/store"
-	"zshell/backend/internal/updatesvc"
-	"zshell/backend/internal/ws"
+	"wiShell/backend/internal/configstore"
+	"wiShell/backend/internal/monitorsvc"
+	"wiShell/backend/internal/store"
+	"wiShell/backend/internal/updatesvc"
+	"wiShell/backend/internal/ws"
 )
 
 type Server struct {

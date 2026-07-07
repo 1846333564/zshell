@@ -6,7 +6,7 @@ import (
 	"path"
 	"time"
 
-	"zshell/backend/internal/model"
+	"wiShell/backend/internal/model"
 )
 
 func StreamTextFileWithChunks(conn model.Connection, remotePath string, timeout time.Duration, report TextReadProgressReporter, reportChunk TextReadChunkReporter) (TextFile, error) {

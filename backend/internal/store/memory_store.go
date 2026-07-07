@@ -6,7 +6,7 @@ import (
 	"sort"
 	"sync"
 
-	"zshell/backend/internal/model"
+	"wiShell/backend/internal/model"
 )
 
 type MemoryStore struct {

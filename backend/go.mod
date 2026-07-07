@@ -1,4 +1,4 @@
-module zshell/backend
+module wiShell/backend
 
 go 1.24.0
 

@@ -1,4 +1,4 @@
-# zShell - 第 5 步
+# wiShell - 第 5 步
 
 ## 已实现内容
 
@@ -67,7 +67,7 @@
 
 ```powershell
 cd backend
-go run ./cmd/zshell
+go run ./cmd/wiShell
 ```
 
 2. 启动前端：

@@ -1,10 +1,12 @@
 function backendBase() {
-  return window.__ZSHELL_BACKEND_BASE__ || '';
+  return window.__WISHELL_BACKEND_BASE__ || '';
 }
 
 function apiUrl(path) {
   return `${backendBase()}${path}`;
 }
+
+const STREAM_PARSE_YIELD_EVENTS = 4;
 
 async function requestJson(url, options) {
   const response = await fetch(apiUrl(url), {
@@ -229,9 +231,11 @@ async function readRemoteTextFileStream(connectionId, path, onProgress, options 
   const decoder = new TextDecoder();
   const contentDecoder = new TextDecoder();
   const contentParts = [];
+  const collectContent = options.collectContent !== false;
   let buffer = '';
   let file = null;
   let lastChunk = null;
+  let parsedEvents = 0;
 
   const appendChunk = (chunk = {}) => {
     lastChunk = chunk;
@@ -243,7 +247,9 @@ async function readRemoteTextFileStream(connectionId, path, onProgress, options 
     if (!text) {
       return;
     }
-    contentParts.push(text);
+    if (collectContent) {
+      contentParts.push(text);
+    }
     options.onChunk?.({ ...chunk, text });
   };
 
@@ -276,6 +282,10 @@ async function readRemoteTextFileStream(connectionId, path, onProgress, options 
     for (const line of lines) {
       const event = parseJson(line.trim());
       handleEvent(event);
+      parsedEvents += 1;
+      if (parsedEvents % STREAM_PARSE_YIELD_EVENTS === 0) {
+        await yieldToBrowser();
+      }
     }
 
     if (done) {
@@ -294,10 +304,12 @@ async function readRemoteTextFileStream(connectionId, path, onProgress, options 
 
   const tail = contentDecoder.decode();
   if (tail) {
-    contentParts.push(tail);
+    if (collectContent) {
+      contentParts.push(tail);
+    }
     options.onChunk?.({ ...(lastChunk || {}), text: tail });
   }
-  if (file.content == null) {
+  if (collectContent && file.content == null) {
     file.content = contentParts.join('');
   }
 
@@ -430,7 +442,7 @@ export function archiveRemoteItemsUrl(connectionId, remotePaths) {
   return backendDownloadUrl(`/api/sftp/archive?${params.toString()}`);
 }
 
-export async function downloadRemoteItems(connectionId, remotePaths, fileName = 'zshell-download.zip') {
+export async function downloadRemoteItems(connectionId, remotePaths, fileName = 'wiShell-download.zip') {
   const response = await fetch(archiveRemoteItemsUrl(connectionId, remotePaths));
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
@@ -496,6 +508,16 @@ function decodeBase64Bytes(value) {
     bytes[index] = binary.charCodeAt(index);
   }
   return bytes;
+}
+
+function yieldToBrowser() {
+  return new Promise((resolve) => {
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => resolve());
+      return;
+    }
+    setTimeout(resolve, 0);
+  });
 }
 
 function updateStoppedError(message) {

@@ -5,7 +5,7 @@ export function createTerminalClient({
   onOutput,
   onError,
 }) {
-  const backendBase = window.__ZSHELL_BACKEND_BASE__ || window.location.origin;
+  const backendBase = window.__WISHELL_BACKEND_BASE__ || window.location.origin;
   const backendUrl = new URL(backendBase);
   const protocol = backendUrl.protocol === 'https:' ? 'wss' : 'ws';
   const socketUrl = `${protocol}://${backendUrl.host}/ws/terminal?connectionId=${encodeURIComponent(connectionId)}`;

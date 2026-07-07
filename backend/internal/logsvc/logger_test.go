@@ -12,8 +12,8 @@ func TestLoggerCleansOldLogsAndRotatesHourly(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Date(2026, 6, 25, 14, 30, 0, 0, time.Local)
 
-	oldPath := filepath.Join(dir, "zshell-20260624-13.log")
-	keepPath := filepath.Join(dir, "zshell-20260624-15.log")
+	oldPath := filepath.Join(dir, "wiShell-20260624-13.log")
+	keepPath := filepath.Join(dir, "wiShell-20260624-15.log")
 	if err := os.WriteFile(oldPath, []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -50,11 +50,11 @@ func TestLoggerCleansOldLogsAndRotatesHourly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	first, err := os.ReadFile(filepath.Join(dir, "zshell-20260625-14.log"))
+	first, err := os.ReadFile(filepath.Join(dir, "wiShell-20260625-14.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := os.ReadFile(filepath.Join(dir, "zshell-20260625-15.log"))
+	second, err := os.ReadFile(filepath.Join(dir, "wiShell-20260625-15.log"))
 	if err != nil {
 		t.Fatal(err)
 	}

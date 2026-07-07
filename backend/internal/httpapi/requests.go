@@ -1,7 +1,7 @@
 package httpapi
 
 import (
-	"zshell/backend/internal/sftpsvc"
+	"wiShell/backend/internal/sftpsvc"
 )
 
 type createConnectionRequest struct {

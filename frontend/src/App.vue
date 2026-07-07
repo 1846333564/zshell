@@ -4,15 +4,15 @@
       <div class="topbar-drag-region">
         <div class="brand-lockup">
           <span class="brand-glyph">z</span>
-          <strong>zShell</strong>
+          <strong>wiShell</strong>
         </div>
 
         <nav class="app-menu-strip" aria-label="应用菜单">
           <div class="app-menu-item">
-            <button class="app-menu-button" type="button">zShell</button>
+            <button class="app-menu-button" type="button">wiShell</button>
             <div class="app-menu-dropdown">
               <button type="button" @click="showConnectHome">连接首页</button>
-              <button type="button" @click="showAboutDialog">关于 zShell</button>
+              <button type="button" @click="showAboutDialog">关于 wiShell</button>
               <button type="button" @click="closeWindow">退出</button>
             </div>
           </div>
@@ -140,7 +140,7 @@
         <section class="app-dialog about-dialog" @click.stop>
           <header class="dialog-head">
             <div>
-              <strong>关于 zShell</strong>
+              <strong>关于 wiShell</strong>
               <span>版本 {{ appInfo.version || '0.0.1' }}</span>
             </div>
             <button type="button" class="dialog-close" @click="hideAboutDialog">×</button>

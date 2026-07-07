@@ -17,7 +17,7 @@
 1. `RemoteCodeEditor.vue` 只在用户打开在线文本编辑器时动态加载 Monaco；`editorWarmup.js` 会在应用启动后空闲时后台预热同一个加载 Promise。
 2. `monacoLoader.js` 配置 editor/json/css/html/typescript workers，并使用 Vite `?worker` 产出独立 worker 资产。
 3. 编辑器窗口继续复用现有 `FileManager.vue` 的打开、保存、脏关闭、多窗口和最大化逻辑，避免改动后端远程文本读写契约。
-4. Tab 键由 Monaco 内部处理，插入缩进或执行语言缩进，不再落到页面焦点导航，因此不会被顶部 `zShell`、`配置管理`、`UI管理` 菜单焦点链路抢走。
+4. Tab 键由 Monaco 内部处理，插入缩进或执行语言缩进，不再落到页面焦点导航，因此不会被顶部 `wiShell`、`配置管理`、`UI管理` 菜单焦点链路抢走。
 5. 文件大小继续沿用当前 10 MB 文本限制；超过阈值保留下载或只读提示，避免大文件高亮拖慢 WebView2。
 
 ## 性能控制

@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
-	"zshell/backend/internal/model"
-	"zshell/backend/internal/sshsvc"
+	"wiShell/backend/internal/model"
+	"wiShell/backend/internal/sshsvc"
 )
 
 func DeleteItems(conn model.Connection, items []TransferItem, timeout time.Duration) (DeleteBatchResult, error) {

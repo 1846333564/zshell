@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"zshell/backend/internal/appinfo"
+	"wiShell/backend/internal/appinfo"
 )
 
 func normalizeVersion(value string) string {
@@ -59,7 +59,7 @@ func findExecutableAsset(assets []githubAsset, version string) githubAsset {
 	}
 	for _, asset := range assets {
 		name := strings.ToLower(asset.Name)
-		if strings.HasPrefix(name, "zshell.") && strings.HasSuffix(name, ".exe") {
+		if strings.HasPrefix(name, "wiShell.") && strings.HasSuffix(name, ".exe") {
 			return asset
 		}
 	}

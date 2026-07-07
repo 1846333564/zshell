@@ -9,8 +9,8 @@ import (
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
-	"zshell/backend/internal/model"
-	"zshell/backend/internal/sshsvc"
+	"wiShell/backend/internal/model"
+	"wiShell/backend/internal/sshsvc"
 )
 
 func TransferItems(sourceConn model.Connection, targetConn model.Connection, targetDir string, items []TransferItem, action string, timeout time.Duration) (TransferBatchResult, error) {

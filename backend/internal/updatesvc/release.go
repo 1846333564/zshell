@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"zshell/backend/internal/appinfo"
+	"wiShell/backend/internal/appinfo"
 )
 
 func (s *Service) latestRelease(ctx context.Context, report ProgressReporter) (githubRelease, error) {

@@ -1,4 +1,4 @@
-# zShell - 第 4 步
+# wiShell - 第 4 步
 
 ## 已实现内容
 
@@ -50,7 +50,7 @@
 1. 启动后端：
 
 ```powershell
-go run ./cmd/zshell
+go run ./cmd/wiShell
 ```
 
 2. 启动前端：

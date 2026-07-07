@@ -46,7 +46,7 @@ func DefaultLogDir() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve user config dir: %w", err)
 	}
-	return filepath.Join(configDir, "zShell", logFolderName), nil
+	return filepath.Join(configDir, "wiShell", logFolderName), nil
 }
 
 func New(dir string) (*Logger, error) {
@@ -111,7 +111,7 @@ func (l *Logger) rotateLocked(now time.Time) error {
 		return err
 	}
 
-	path := filepath.Join(l.dir, "zshell-"+hour+".log")
+	path := filepath.Join(l.dir, "wiShell-"+hour+".log")
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return fmt.Errorf("open hourly log file: %w", err)
@@ -145,7 +145,7 @@ func (l *Logger) cleanupOldLogs() error {
 		if err != nil {
 			continue
 		}
-		if !strings.HasPrefix(entry.Name(), "zshell-") || !strings.HasSuffix(entry.Name(), ".log") {
+		if !strings.HasPrefix(entry.Name(), "wiShell-") || !strings.HasSuffix(entry.Name(), ".log") {
 			continue
 		}
 		if info.ModTime().Before(cutoff) {

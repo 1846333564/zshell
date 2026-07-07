@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"zshell/backend/internal/appinfo"
+	"wiShell/backend/internal/appinfo"
 )
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

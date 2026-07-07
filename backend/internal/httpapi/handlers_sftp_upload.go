@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	"zshell/backend/internal/logsvc"
-	"zshell/backend/internal/sftpsvc"
+	"wiShell/backend/internal/logsvc"
+	"wiShell/backend/internal/sftpsvc"
 )
 
 func (s *Server) handleSFTPUpload(w http.ResponseWriter, r *http.Request) {

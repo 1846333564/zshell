@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/pkg/sftp"
-	"zshell/backend/internal/model"
-	"zshell/backend/internal/sshsvc"
+	"wiShell/backend/internal/model"
+	"wiShell/backend/internal/sshsvc"
 )
 
 func ReadTextFile(conn model.Connection, remotePath string, timeout time.Duration) (TextFile, error) {

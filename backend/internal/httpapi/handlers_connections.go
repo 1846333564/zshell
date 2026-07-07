@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"zshell/backend/internal/model"
+	"wiShell/backend/internal/model"
 )
 
 func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
