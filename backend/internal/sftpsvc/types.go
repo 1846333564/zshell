@@ -14,7 +14,7 @@ type Entry struct {
 	ModTime string `json:"modTime"`
 }
 
-const MaxTextEditBytes = 64 * 1024 * 1024
+const MaxTextEditBytes = 256 * 1024 * 1024
 
 type TextFile struct {
 	Name    string `json:"name"`

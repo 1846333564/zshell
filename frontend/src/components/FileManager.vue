@@ -207,6 +207,10 @@
       <div
         v-for="editorWindow in editors"
         :key="editorWindow.id"
+        v-show="
+          !editorWindow.loading ||
+          (editorWindow.openProgress?.totalBytes || editorWindow.size || 0) >= 32 * 1024 * 1024
+        "
         class="remote-editor-window"
         :class="{
           active: editorWindow.id === activeEditorId,
@@ -245,7 +249,14 @@
           @state="setEditorRuntimeState(editorWindow, $event)"
         />
 
-        <div v-if="editorWindow.loading && editorWindow.windowState !== 'minimized'" class="remote-editor-open-progress">
+        <div
+          v-if="
+            editorWindow.loading &&
+            editorWindow.windowState !== 'minimized' &&
+            (editorWindow.openProgress?.totalBytes || editorWindow.size || 0) >= 32 * 1024 * 1024
+          "
+          class="remote-editor-open-progress"
+        >
           <section class="remote-editor-open-card">
             <div class="remote-editor-open-head">
               <strong>{{ editorOpenStatus(editorWindow) }}</strong>
