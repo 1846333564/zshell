@@ -235,7 +235,7 @@
         </header>
 
         <RemoteCodeEditor
-          v-if="editorWindow.windowState !== 'minimized'"
+          v-if="editorWindow.windowState !== 'minimized' && !editorWindow.loading && editorWindow.openProgress?.stage !== 'error'"
           v-model="editorWindow.content"
           :path="editorWindow.path"
           :disabled="editorWindow.loading || editorWindow.saving"

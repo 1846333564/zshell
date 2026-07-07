@@ -190,6 +190,21 @@ export async function readRemoteTextFileWithProgress(connectionId, path, onProgr
     return readRemoteTextFile(connectionId, path);
   }
 
+  try {
+    return await readRemoteTextFileStream(connectionId, path, onProgress);
+  } catch (error) {
+    if (error?.remoteReadError) {
+      throw error;
+    }
+    onProgress({
+      stage: 'fallback',
+      message: '流式读取不可用，正在切换普通读取',
+    });
+    return readRemoteTextFile(connectionId, path);
+  }
+}
+
+async function readRemoteTextFileStream(connectionId, path, onProgress) {
   const response = await fetch(apiUrl('/api/sftp/file/read/stream'), {
     method: 'POST',
     headers: {
@@ -227,7 +242,7 @@ export async function readRemoteTextFileWithProgress(connectionId, path, onProgr
         continue;
       }
       if (event.type === 'error') {
-        throw new Error(event.error || '读取远程文件失败');
+        throw remoteReadError(event.error || '读取远程文件失败');
       }
       if (event.type === 'result') {
         file = event.file || {};
@@ -244,7 +259,7 @@ export async function readRemoteTextFileWithProgress(connectionId, path, onProgr
     if (event.type === 'progress') {
       onProgress(event.progress || {});
     } else if (event.type === 'error') {
-      throw new Error(event.error || '读取远程文件失败');
+      throw remoteReadError(event.error || '读取远程文件失败');
     } else if (event.type === 'result') {
       file = event.file || {};
     }
@@ -445,5 +460,11 @@ function parseJson(value) {
 function updateStoppedError(message) {
   const error = new Error(message || '更新已停止');
   error.name = 'AbortError';
+  return error;
+}
+
+function remoteReadError(message) {
+  const error = new Error(message || '读取远程文件失败');
+  error.remoteReadError = true;
   return error;
 }

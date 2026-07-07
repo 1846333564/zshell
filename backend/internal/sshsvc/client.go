@@ -31,12 +31,18 @@ printf 'cpu_cores=%s\n' "$cores"
 printf 'cpu_model=%s\n' "$model"
 printf 'memory_kb=%s\n' "$memkb"`
 
-const sharedClientProbeTimeout = 800 * time.Millisecond
+const (
+	sharedClientProbeTimeout  = 800 * time.Millisecond
+	sharedClientProbeInterval = 5 * time.Second
+)
 
 var sharedClients sync.Map
 
 type sharedClient struct {
-	client *ssh.Client
+	client      *ssh.Client
+	mu          sync.Mutex
+	lastProbe   time.Time
+	lastProbeOK bool
 }
 
 func NewClient(conn model.Connection, timeout time.Duration) (*ssh.Client, error) {
@@ -46,11 +52,11 @@ func NewClient(conn model.Connection, timeout time.Duration) (*ssh.Client, error
 func SharedClient(conn model.Connection, timeout time.Duration) (*ssh.Client, error) {
 	key := sharedClientKey(conn)
 	if cached, ok := sharedClients.Load(key); ok {
-		client := cached.(*sharedClient).client
-		if sshClientAlive(client) {
-			return client, nil
+		cachedClient := cached.(*sharedClient)
+		if cachedClient.alive() {
+			return cachedClient.client, nil
 		}
-		_ = client.Close()
+		_ = cachedClient.client.Close()
 		sharedClients.Delete(key)
 	}
 
@@ -59,15 +65,19 @@ func SharedClient(conn model.Connection, timeout time.Duration) (*ssh.Client, er
 		return nil, err
 	}
 
-	cached := &sharedClient{client: client}
+	cached := &sharedClient{
+		client:      client,
+		lastProbe:   time.Now(),
+		lastProbeOK: true,
+	}
 	actual, loaded := sharedClients.LoadOrStore(key, cached)
 	if loaded {
 		_ = client.Close()
-		existing := actual.(*sharedClient).client
-		if sshClientAlive(existing) {
-			return existing, nil
+		existing := actual.(*sharedClient)
+		if existing.alive() {
+			return existing.client, nil
 		}
-		_ = existing.Close()
+		_ = existing.client.Close()
 		sharedClients.Delete(key)
 		return SharedClient(conn, timeout)
 	}
@@ -80,6 +90,25 @@ func DropSharedClient(conn model.Connection) {
 	if cached, ok := sharedClients.LoadAndDelete(key); ok {
 		_ = cached.(*sharedClient).client.Close()
 	}
+}
+
+func (c *sharedClient) alive() bool {
+	c.mu.Lock()
+	if !c.lastProbe.IsZero() && time.Since(c.lastProbe) < sharedClientProbeInterval {
+		ok := c.lastProbeOK
+		c.mu.Unlock()
+		return ok
+	}
+	c.mu.Unlock()
+
+	ok := sshClientAlive(c.client)
+
+	c.mu.Lock()
+	c.lastProbe = time.Now()
+	c.lastProbeOK = ok
+	c.mu.Unlock()
+
+	return ok
 }
 
 func TestConnection(conn model.Connection, timeout time.Duration) error {
