@@ -2,7 +2,7 @@
 
 ## 项目概览
 
-zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/WebView2、Vue、xterm.js、Monaco Editor 和基于 SSH 的 SFTP。当前版本从 `VERSION` 文件读取，本次版本为 `0.3.11`，版本号从 `0.0.1` 起步。发布产物输出到项目根目录的 `release` 文件夹，命名格式为 `zshell.<版本号>.exe`；本地 `release` 历史包不会自动删除。
+zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/WebView2、Vue、xterm.js、Monaco Editor 和基于 SSH 的 SFTP。当前版本从 `VERSION` 文件读取，本次版本为 `0.3.12`，版本号从 `0.0.1` 起步。发布产物输出到项目根目录的 `release` 文件夹，命名格式为 `zshell.<版本号>.exe`；本地 `release` 历史包不会自动删除。
 
 ## 当前架构
 
@@ -14,7 +14,7 @@ zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/Web
 - `backend/internal/configstore` 使用 Windows DPAPI 在当前用户配置目录中加密保存连接配置。
 - `frontend/src/App.vue` 管理双栏桌面壳：左侧监控面板、右侧连接标签、终端和文件区域，并提供“关于 zShell”和“检查更新”弹窗。
 - `build-windows.ps1` 是 release 构建入口，会失败即停地执行 npm、Go 和 Wails 命令，读取 `VERSION`，并输出当前版本 exe 到 `release` 文件夹，不清理旧版本 exe。
-- `.github/workflows/release.yml` 用 GitHub Actions 在 tag 或手动触发时构建 Windows exe，并创建或更新 GitHub Release 资产；`.github/release-names.json` 可为指定版本配置 Release 标题，本次 `0.3.11` 已配置“修复文件管理器卡顿和文本打开失败”标题。
+- `.github/workflows/release.yml` 用 GitHub Actions 在 tag 或手动触发时构建 Windows exe，并创建或更新 GitHub Release 资产；`.github/release-names.json` 可为指定版本配置 Release 标题，本次 `0.3.12` 已配置“修复文本编辑器打开导致文件管理器消失”标题。
 - 后端大文件已按同包功能拆分，HTTP API、SFTP 和更新服务的 Go 源文件都控制在 300 行以内；前端大组件和样式已拆分为组合函数与 CSS 分包，业务源码都控制在 500 行以内。
 - `backend/internal/logsvc` 在启动时初始化日志系统，日志写入当前用户配置目录 `%AppData%\zShell\log`，按小时生成 `zshell-YYYYMMDD-HH.log`，并在每次启动时清理 24 小时以前的日志文件。
 
@@ -32,7 +32,7 @@ zShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/Web
 - 前端保存连接编辑，支持前端模式、后端模式、运维模式；文件管理器会按模式分别默认打开 `/var`、`/opt`、`/`。
 - 连接标签只显示连接名。
 - 文件管理器路径导航：固定根路径 `/`、解析后的 home 路径如 `/root`、树节点只显示 basename、目录树和右侧列表共享目录缓存与删除失效逻辑，目录树使用与右侧列表一致的分割线和选中条、路径输入支持全局已知目录的 Tab 唯一补全、路径历史按内存访问频次和最近访问排序并默认滚到底部，右侧居中折叠按钮、完整右键菜单动作、选中项删除确认、可调整文件列表列宽、列头点击排序动画和升降序箭头；已打开目录会先使用内存缓存秒开，再后台刷新真实目录内容，目录树索引按小批量写入，目录预加载只延后读取当前目录少量直接子目录且单并发执行，手动刷新和 F5 会重新索引所有已打开目录。
-- 文件管理器在线文本编辑：双击或右键打开普通浮动窗口，支持多个文件窗口同时编辑、拖动、最小化、最大化、`Ctrl+S` 保存，关闭脏内容时提示保存、保存并关闭、不保存并关闭或取消；编辑区已重构为 Monaco Editor，支持代码高亮、Tab 缩进、`Ctrl+F` 搜索、匹配高亮和替换能力，打开文件时会先取消后台目录预加载并在编辑器窗口内显示真实下载字节进度、速度和读取阶段，远程内容读完后再启动 Monaco 初始化，流式读取不可用时会自动回退到普通文本读取。
+- 文件管理器在线文本编辑：双击或右键打开普通浮动窗口，支持多个文件窗口同时编辑、拖动、最小化、最大化、`Ctrl+S` 保存，关闭脏内容时提示保存、保存并关闭、不保存并关闭或取消；编辑区已重构为 Monaco Editor，支持代码高亮、Tab 缩进、`Ctrl+F` 搜索、匹配高亮和替换能力，打开文件时会先取消后台目录预加载并在编辑器窗口内显示真实下载字节进度、速度和读取阶段，远程内容读完后再启动 Monaco 初始化，流式读取不可用时会自动回退到普通文本读取，编辑器相关模板绑定已显式接入，避免读取中或窗口交互时文件管理器渲染中断。
 - 文件和终端右键菜单渲染在视口层，避免 UI 缩放造成坐标偏移；文件右键菜单点击其他位置会关闭。
 - 文件选择器或拖放上传，显示后端真实 SFTP 写入总进度、单文件进度、上传速度，上传面板可折叠并保留最近一次上传记录。
 - 终端聚焦时 `Ctrl +` / `Ctrl -` 调整字体并持久化到加密配置文件；非终端 UI 缩放也会持久化，终端区域会抵消全局 UI zoom，避免 xterm.js 鼠标选择坐标相对光标左上偏移，同时终端自身保持正常 `100%` flex 尺寸，避免 UI 缩放二次参与布局导致右侧或下方空白；终端支持 `Ctrl+Shift+C` / `Ctrl+Shift+V` 剪贴板快捷键。

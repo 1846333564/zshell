@@ -366,8 +366,10 @@ const props = defineProps({
 });
 
 const {
+  activateEditor,
   activeEditorId,
   breadcrumbs,
+  cancelEditorClosePrompt,
   canDeleteFromMenu,
   canPaste,
   changeSort,
@@ -392,6 +394,7 @@ const {
   dragOver,
   editorDirty,
   editorMeta,
+  editorOpenStatus,
   editors,
   editorStatus,
   editorTitle,
@@ -403,6 +406,7 @@ const {
   folderInput,
   formatSize,
   formatTime,
+  formatEditorBytes,
   formatUploadSpeed,
   gridTemplateColumns,
   hasSelection,
@@ -457,5 +461,6 @@ const {
   uploadPercent,
   uploadProgress,
   uploadTitle,
+  uploading,
 } = useFileManager(props);
 </script>
