@@ -79,10 +79,15 @@ func (s *Server) handleSFTPFileReadStream(w http.ResponseWriter, r *http.Request
 		flusher.Flush()
 	}
 
-	file, err := sftpsvc.ReadTextFileWithProgress(conn, req.Path, s.sshTimeout, func(event sftpsvc.TextReadProgressEvent) {
+	file, err := sftpsvc.StreamTextFileWithChunks(conn, req.Path, s.sshTimeout, func(event sftpsvc.TextReadProgressEvent) {
 		writeEvent(map[string]any{
 			"type":     "progress",
 			"progress": event,
+		})
+	}, func(event sftpsvc.TextReadChunkEvent) {
+		writeEvent(map[string]any{
+			"type":  "chunk",
+			"chunk": event,
 		})
 	})
 	if err != nil {

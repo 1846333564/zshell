@@ -15,12 +15,13 @@ type Entry struct {
 }
 
 const MaxTextEditBytes = 256 * 1024 * 1024
+const TextStreamChunkBytes = 32 * 1024
 
 type TextFile struct {
 	Name    string `json:"name"`
 	Path    string `json:"path"`
 	Size    int64  `json:"size"`
-	Content string `json:"content"`
+	Content string `json:"content,omitempty"`
 	ModTime string `json:"modTime"`
 }
 
@@ -34,6 +35,17 @@ type TextReadProgressEvent struct {
 }
 
 type TextReadProgressReporter func(TextReadProgressEvent)
+
+type TextReadChunkEvent struct {
+	Path        string `json:"path,omitempty"`
+	FileName    string `json:"fileName,omitempty"`
+	OffsetBytes int64  `json:"offsetBytes"`
+	LoadedBytes int64  `json:"loadedBytes"`
+	TotalBytes  int64  `json:"totalBytes"`
+	Data        []byte `json:"data"`
+}
+
+type TextReadChunkReporter func(TextReadChunkEvent)
 
 type UploadItem struct {
 	FileName     string

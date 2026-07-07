@@ -54,6 +54,7 @@ let focusSubscription = null;
 let resizeObserver = null;
 let themeChangeHandler = null;
 let disposed = false;
+let applyingExternalValue = false;
 
 onMounted(() => {
   initializeEditor();
@@ -74,10 +75,24 @@ onBeforeUnmount(() => {
 watch(
   () => props.modelValue,
   (value) => {
-    if (!model || model.getValue() === value) {
+    if (!model) {
       return;
     }
-    model.setValue(value || '');
+    const nextValue = value || '';
+    const currentValue = model.getValue();
+    if (currentValue === nextValue) {
+      return;
+    }
+    applyingExternalValue = true;
+    try {
+      if (nextValue.startsWith(currentValue)) {
+        appendModelText(nextValue.slice(currentValue.length));
+      } else {
+        model.setValue(nextValue);
+      }
+    } finally {
+      applyingExternalValue = false;
+    }
   },
 );
 
@@ -163,6 +178,9 @@ async function initializeEditor() {
     });
 
     contentSubscription = editor.onDidChangeModelContent(() => {
+      if (applyingExternalValue) {
+        return;
+      }
       const nextValue = model.getValue();
       if (nextValue !== props.modelValue) {
         emit('update:modelValue', nextValue);
@@ -207,5 +225,20 @@ function updateModelLanguage() {
   }
   const language = monacoLoader.detectMonacoLanguage(monacoApi, props.path);
   monacoApi.editor.setModelLanguage(model, language);
+}
+
+function appendModelText(text) {
+  if (!text || !monacoApi || !model) {
+    return;
+  }
+  const line = model.getLineCount();
+  const column = model.getLineMaxColumn(line);
+  model.applyEdits([
+    {
+      range: new monacoApi.Range(line, column, line, column),
+      text,
+      forceMoveMarkers: true,
+    },
+  ]);
 }
 </script>

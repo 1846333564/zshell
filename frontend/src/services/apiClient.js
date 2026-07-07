@@ -185,26 +185,30 @@ export function readRemoteTextFile(connectionId, path) {
   });
 }
 
-export async function readRemoteTextFileWithProgress(connectionId, path, onProgress) {
-  if (typeof onProgress !== 'function') {
+export async function readRemoteTextFileWithProgress(connectionId, path, onProgress, options = {}) {
+  const canReportProgress = typeof onProgress === 'function';
+  const canReportChunk = typeof options.onChunk === 'function';
+  if (!canReportProgress && !canReportChunk) {
     return readRemoteTextFile(connectionId, path);
   }
 
   try {
-    return await readRemoteTextFileStream(connectionId, path, onProgress);
+    return await readRemoteTextFileStream(connectionId, path, onProgress, options);
   } catch (error) {
     if (error?.remoteReadError) {
       throw error;
     }
-    onProgress({
-      stage: 'fallback',
-      message: '流式读取不可用，正在切换普通读取',
-    });
+    if (canReportProgress) {
+      onProgress({
+        stage: 'fallback',
+        message: '流式读取不可用，正在切换普通读取',
+      });
+    }
     return readRemoteTextFile(connectionId, path);
   }
 }
 
-async function readRemoteTextFileStream(connectionId, path, onProgress) {
+async function readRemoteTextFileStream(connectionId, path, onProgress, options = {}) {
   const response = await fetch(apiUrl('/api/sftp/file/read/stream'), {
     method: 'POST',
     headers: {
@@ -223,8 +227,45 @@ async function readRemoteTextFileStream(connectionId, path, onProgress) {
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  const contentDecoder = new TextDecoder();
+  const contentParts = [];
   let buffer = '';
   let file = null;
+  let lastChunk = null;
+
+  const appendChunk = (chunk = {}) => {
+    lastChunk = chunk;
+    const bytes = decodeBase64Bytes(chunk.data);
+    if (bytes.length === 0) {
+      return;
+    }
+    const text = contentDecoder.decode(bytes, { stream: true });
+    if (!text) {
+      return;
+    }
+    contentParts.push(text);
+    options.onChunk?.({ ...chunk, text });
+  };
+
+  const handleEvent = (event) => {
+    if (!event.type) {
+      return;
+    }
+    if (event.type === 'progress') {
+      onProgress?.(event.progress || {});
+      return;
+    }
+    if (event.type === 'chunk') {
+      appendChunk(event.chunk || {});
+      return;
+    }
+    if (event.type === 'error') {
+      throw remoteReadError(event.error || '读取远程文件失败');
+    }
+    if (event.type === 'result') {
+      file = event.file || {};
+    }
+  };
 
   while (true) {
     const { value, done } = await reader.read();
@@ -234,19 +275,7 @@ async function readRemoteTextFileStream(connectionId, path, onProgress) {
 
     for (const line of lines) {
       const event = parseJson(line.trim());
-      if (!event.type) {
-        continue;
-      }
-      if (event.type === 'progress') {
-        onProgress(event.progress || {});
-        continue;
-      }
-      if (event.type === 'error') {
-        throw remoteReadError(event.error || '读取远程文件失败');
-      }
-      if (event.type === 'result') {
-        file = event.file || {};
-      }
+      handleEvent(event);
     }
 
     if (done) {
@@ -256,17 +285,20 @@ async function readRemoteTextFileStream(connectionId, path, onProgress) {
 
   if (buffer.trim()) {
     const event = parseJson(buffer.trim());
-    if (event.type === 'progress') {
-      onProgress(event.progress || {});
-    } else if (event.type === 'error') {
-      throw remoteReadError(event.error || '读取远程文件失败');
-    } else if (event.type === 'result') {
-      file = event.file || {};
-    }
+    handleEvent(event);
   }
 
   if (!file) {
     throw new Error('远程文件读取没有返回内容');
+  }
+
+  const tail = contentDecoder.decode();
+  if (tail) {
+    contentParts.push(tail);
+    options.onChunk?.({ ...(lastChunk || {}), text: tail });
+  }
+  if (file.content == null) {
+    file.content = contentParts.join('');
   }
 
   return { file };
@@ -455,6 +487,15 @@ function parseJson(value) {
   } catch {
     return {};
   }
+}
+
+function decodeBase64Bytes(value) {
+  const binary = atob(value || '');
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
 }
 
 function updateStoppedError(message) {

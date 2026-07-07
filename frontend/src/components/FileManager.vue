@@ -207,10 +207,6 @@
       <div
         v-for="editorWindow in editors"
         :key="editorWindow.id"
-        v-show="
-          !editorWindow.loading ||
-          (editorWindow.openProgress?.totalBytes || editorWindow.size || 0) >= 32 * 1024 * 1024
-        "
         class="remote-editor-window"
         :class="{
           active: editorWindow.id === activeEditorId,
@@ -229,20 +225,20 @@
           </div>
           <div class="remote-editor-actions" @mousedown.stop>
             <span>{{ editorStatus(editorWindow) }}</span>
-            <button class="small-btn" :disabled="!editorDirty(editorWindow) || editorWindow.loading || editorWindow.saving" @click="saveEditor(editorWindow)">保存</button>
-            <button class="editor-window-control" type="button" title="最小化" :disabled="editorWindow.loading || editorWindow.saving" @click="minimizeEditor(editorWindow)">_</button>
-            <button class="editor-window-control" type="button" :title="editorWindow.windowState === 'normal' ? '最大化' : '还原'" :disabled="editorWindow.loading || editorWindow.saving" @click="toggleMaximizeEditor(editorWindow)">
+            <button class="small-btn" :disabled="!editorDirty(editorWindow) || editorWindow.contentLoading || editorWindow.saving" @click="saveEditor(editorWindow)">保存</button>
+            <button class="editor-window-control" type="button" title="最小化" :disabled="editorWindow.saving" @click="minimizeEditor(editorWindow)">_</button>
+            <button class="editor-window-control" type="button" :title="editorWindow.windowState === 'normal' ? '最大化' : '还原'" :disabled="editorWindow.saving" @click="toggleMaximizeEditor(editorWindow)">
               {{ editorWindow.windowState === 'normal' ? '□' : '❐' }}
             </button>
-            <button class="editor-window-control danger" type="button" title="关闭" :disabled="editorWindow.loading || editorWindow.saving" @click="requestEditorClose(editorWindow)">×</button>
+            <button class="editor-window-control danger" type="button" title="关闭" :disabled="editorWindow.saving" @click="requestEditorClose(editorWindow)">×</button>
           </div>
         </header>
 
         <RemoteCodeEditor
-          v-if="editorWindow.windowState !== 'minimized' && !editorWindow.loading && editorWindow.openProgress?.stage !== 'error'"
+          v-if="editorWindow.windowState !== 'minimized' && editorWindow.openProgress?.stage !== 'error'"
           v-model="editorWindow.content"
           :path="editorWindow.path"
-          :disabled="editorWindow.loading || editorWindow.saving"
+          :disabled="editorWindow.contentLoading || editorWindow.saving"
           :active="editorWindow.id === activeEditorId"
           @focus="activateEditor(editorWindow.id)"
           @save="saveEditor(editorWindow)"
@@ -251,9 +247,9 @@
 
         <div
           v-if="
-            editorWindow.loading &&
+            editorWindow.contentLoading &&
             editorWindow.windowState !== 'minimized' &&
-            (editorWindow.openProgress?.totalBytes || editorWindow.size || 0) >= 32 * 1024 * 1024
+            (editorWindow.openProgress?.loadedBytes || 0) <= 0
           "
           class="remote-editor-open-progress"
         >

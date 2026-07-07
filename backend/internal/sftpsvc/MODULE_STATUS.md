@@ -6,13 +6,13 @@
 
 ## 重要文件
 
-- `service.go`、`upload.go`、`upload_batch.go`、`upload_dirs.go`、`upload_workers.go`、`download.go`、`text.go`、`archive.go`、`transfer.go`、`delete.go`：按 SFTP 功能拆分的服务实现。
+- `service.go`、`upload.go`、`upload_batch.go`、`upload_dirs.go`、`upload_workers.go`、`download.go`、`text.go`、`text_stream.go`、`archive.go`、`transfer.go`、`delete.go`：按 SFTP 功能拆分的服务实现。
 - `paths.go`、`types.go`：远程路径工具和共享 DTO。
 - `service_test.go`
 
 ## 当前状态
 
-支持目录列表、多文件/多目录上传、直接下载、面向在线编辑的 256 MiB 远程文本读写、递归目录归档下载、跨服务器 SFTP 流式复制/移动，以及同服务器远端 `cp`/`mv` 快速复制/移动和远端 `rm -rf` 快速删除。目录列表、上传、在线读写和传输会复用共享 SSH 客户端，减少重复握手成本；在线文本读写创建 SFTP 客户端失败时会丢弃旧共享连接并重试一次，避免旧连接失效后拖慢或直接失败；上传会先预处理并去重远端目录，优先用远端 `mkdir -p` 批量创建目录，失败时回退到 SFTP `MkdirAll`，随后用有界 worker 并发上传大量小文件并持续回调进度；在线文本读取会按时间和字节阈值强制发送中间进度，供 HTTP NDJSON 流式返回。复制粘贴会为同目录或同名冲突生成唯一目标名，例如 `name copy.ext`，并阻止目录复制/移动到自身或子目录；删除会拒绝空路径、根路径和不明确的相对路径。目录列表会用 SFTP `RealPath` 解析请求路径，返回解析后的路径，包含 mode 和 UID:GID owner 元数据，并按文件夹优先排序。
+支持目录列表、多文件/多目录上传、直接下载、面向在线编辑的 256 MiB 远程文本读写、递归目录归档下载、跨服务器 SFTP 流式复制/移动，以及同服务器远端 `cp`/`mv` 快速复制/移动和远端 `rm -rf` 快速删除。目录列表、上传、在线读写和传输会复用共享 SSH 客户端，减少重复握手成本；在线文本读写创建 SFTP 客户端失败时会丢弃旧共享连接并重试一次，避免旧连接失效后拖慢或直接失败；上传会先预处理并去重远端目录，优先用远端 `mkdir -p` 批量创建目录，失败时回退到 SFTP `MkdirAll`，随后用有界 worker 并发上传大量小文件并持续回调进度；普通在线文本读取仍返回完整文本，流式在线文本读取会按 32 KiB 读取远端文件并回调文本 chunk，同时按时间和字节阈值强制发送中间进度，供 HTTP NDJSON 首屏返回内容并继续后台加载。复制粘贴会为同目录或同名冲突生成唯一目标名，例如 `name copy.ext`，并阻止目录复制/移动到自身或子目录；删除会拒绝空路径、根路径和不明确的相对路径。目录列表会用 SFTP `RealPath` 解析请求路径，返回解析后的路径，包含 mode 和 UID:GID owner 元数据，并按文件夹优先排序。
 
 ## 已知工作
 

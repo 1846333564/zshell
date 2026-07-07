@@ -106,7 +106,7 @@ func readTextFileContentWithProgress(source io.Reader, totalBytes int64, report 
 	})
 	progress(0, true)
 
-	chunk := make([]byte, 32*1024)
+	chunk := make([]byte, TextStreamChunkBytes)
 	for {
 		n, readErr := source.Read(chunk)
 		if n > 0 {

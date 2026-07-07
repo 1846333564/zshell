@@ -1,6 +1,7 @@
 package sftpsvc
 
 import (
+	"bytes"
 	"slices"
 	"testing"
 )
@@ -231,5 +232,36 @@ func TestSameConnectionTransferCommand(t *testing.T) {
 	wantMove := "mv -f -- '/home/source file.txt' '/home/target file.txt'"
 	if moveCommand != wantMove {
 		t.Fatalf("move command=%q, want %q", moveCommand, wantMove)
+	}
+}
+
+func TestStreamTextFileContentReports32KiBChunks(t *testing.T) {
+	source := bytes.Repeat([]byte("x"), TextStreamChunkBytes*2+17)
+	var chunks []TextReadChunkEvent
+
+	err := streamTextFileContent(bytes.NewReader(source), "/tmp/demo.txt", "demo.txt", int64(len(source)), nil, func(event TextReadChunkEvent) {
+		chunks = append(chunks, event)
+	})
+	if err != nil {
+		t.Fatalf("streamTextFileContent returned error: %v", err)
+	}
+	if len(chunks) != 3 {
+		t.Fatalf("chunk count=%d, want 3", len(chunks))
+	}
+
+	wantSizes := []int{TextStreamChunkBytes, TextStreamChunkBytes, 17}
+	var got []byte
+	for index, chunk := range chunks {
+		if len(chunk.Data) != wantSizes[index] {
+			t.Fatalf("chunk %d size=%d, want %d", index, len(chunk.Data), wantSizes[index])
+		}
+		wantOffset := int64(index * TextStreamChunkBytes)
+		if chunk.OffsetBytes != wantOffset {
+			t.Fatalf("chunk %d offset=%d, want %d", index, chunk.OffsetBytes, wantOffset)
+		}
+		got = append(got, chunk.Data...)
+	}
+	if !bytes.Equal(got, source) {
+		t.Fatal("streamed chunks did not reconstruct source")
 	}
 }
