@@ -2,7 +2,7 @@
 
 ## 项目概览
 
-wiShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/WebView2、Vue、xterm.js、Monaco Editor 和基于 SSH 的 SFTP。当前版本从 `VERSION` 文件读取，本次版本为 `0.3.16`，版本号从 `0.0.1` 起步。发布产物输出到项目根目录的 `release` 文件夹，命名格式为 `wiShell.<版本号>.exe`；本地 `release` 历史包不会自动删除。
+wiShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/WebView2、Vue、xterm.js、Monaco Editor 和基于 SSH 的 SFTP。当前版本从 `VERSION` 文件读取，本次版本为 `0.3.17`，版本号从 `0.0.1` 起步。发布产物输出到项目根目录的 `release` 文件夹，命名格式为 `wiShell.<版本号>.exe`；本地 `release` 历史包不会自动删除。
 
 ## 当前架构
 
@@ -14,7 +14,7 @@ wiShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/We
 - `backend/internal/configstore` 使用 Windows DPAPI 在当前用户配置目录中加密保存连接配置。
 - `frontend/src/App.vue` 管理双栏桌面壳：左侧监控面板、右侧连接标签、终端和文件区域，并提供“关于 wiShell”和“检查更新”弹窗。
 - `build-windows.ps1` 是 release 构建入口，会失败即停地执行 npm、Go 和 Wails 命令，读取 `VERSION`，并输出当前版本 exe 到 `release` 文件夹，不清理旧版本 exe。
-- `.github/workflows/release.yml` 用 GitHub Actions 在 tag 或手动触发时构建 Windows exe，并创建或更新 GitHub Release 资产；`.github/release-names.json` 可为指定版本配置 Release 标题，本次 `0.3.16` 已配置“优化在线编辑流式渲染稳定性”标题。
+- `.github/workflows/release.yml` 用 GitHub Actions 在 tag 或手动触发时构建 Windows exe，并创建或更新 GitHub Release 资产；`.github/release-names.json` 可为指定版本配置 Release 标题，本次 `0.3.17` 已配置“恢复旧版本保存连接记录”标题。
 - 后端大文件已按同包功能拆分，HTTP API、SFTP 和更新服务的 Go 源文件都控制在 300 行以内；前端大组件和样式已拆分为组合函数与 CSS 分包，`useFileManager.js` 已恢复为可读多行源码并拆出 `fileManagerUtils.js` 路径/格式化/常量工具，后续可继续按目录树、预加载、编辑器窗口和文件动作拆分。
 - `backend/internal/logsvc` 在启动时初始化日志系统，日志写入当前用户配置目录 `%AppData%\wiShell\log`，按小时生成 `wiShell-YYYYMMDD-HH.log`，并在每次启动时清理 24 小时以前的日志文件。
 
@@ -29,6 +29,7 @@ wiShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/We
 - Linux 监控快照 API 和左侧监控 UI；左侧监控 1 秒自动刷新，展示服务器基础参数、服务器时间、CPU/内存/磁盘、进程、分区和上下行网速折线图，网速图只显示峰值并带左侧纵轴刻度。
 - 10000 以上动态后端端口。
 - 后端管理的保存连接配置增删改查，配置使用 Windows DPAPI 加密落盘。
+- 保存连接配置当前写入 `%AppData%\wiShell\connections.dpapi`；如果新配置不存在，或新配置尚未迁移且连接列表为空，会自动读取旧版 `%AppData%\zShell\connections.dpapi` / `%AppData%\zshell\connections.dpapi`，把旧连接复制到新配置并记录迁移标记，避免应用改名后保存连接记录消失。
 - 前端保存连接编辑，支持前端模式、后端模式、运维模式；文件管理器会按模式分别默认打开 `/var`、`/opt`、`/`。
 - 连接标签只显示连接名。
 - 文件管理器路径导航：固定根路径 `/`、解析后的 home 路径如 `/root`、树节点只显示 basename、目录树和右侧列表共享目录缓存与删除失效逻辑，目录树使用与右侧列表一致的分割线和选中条、路径输入支持全局已知目录的 Tab 唯一补全、路径历史按内存访问频次和最近访问排序并默认滚到底部，右侧居中折叠按钮、完整右键菜单动作、选中项删除确认、可调整文件列表列宽、列头点击排序动画和升降序箭头；已打开目录会先使用内存缓存秒开，再后台刷新真实目录内容，目录树索引按小批量写入，目录预加载在当前目录加载完成后立即后台启动，每批最多缓存 10 个未加载目录，并会基于已缓存目录继续递归推进，手动刷新和 F5 会重新索引所有已打开目录。
