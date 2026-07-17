@@ -12,7 +12,7 @@ import (
 const defaultThemeKey = "wiShell"
 
 var allowedThemeKeys = map[string]struct{}{
-	"wiShell":           {},
+	"wiShell":          {},
 	"dracula":          {},
 	"nord":             {},
 	"tokyo-night":      {},
@@ -120,12 +120,27 @@ func (s *Server) saveUIPreferences(preferences configstore.Preferences) error {
 	return s.configStore.SavePreferences(normalizeUIPreferences(preferences))
 }
 
+func (s *Server) GPUAccelerationEnabled() (bool, error) {
+	preferences, err := s.loadUIPreferences()
+	if err != nil {
+		return true, err
+	}
+	return *preferences.GPUAccelerationEnabled, nil
+}
+
 func normalizeUIPreferences(preferences configstore.Preferences) configstore.Preferences {
 	preferences.UIScale = normalizeUIScale(preferences.UIScale)
 	preferences.TerminalFontSize = normalizeTerminalFontSize(preferences.TerminalFontSize)
 	preferences.ThemeKey = normalizeThemeKey(preferences.ThemeKey)
 	preferences.CustomTheme = normalizeCustomTheme(preferences.CustomTheme)
+	if preferences.GPUAccelerationEnabled == nil {
+		preferences.GPUAccelerationEnabled = boolPointer(true)
+	}
 	return preferences
+}
+
+func boolPointer(value bool) *bool {
+	return &value
 }
 
 func normalizeUIScale(value float64) float64 {

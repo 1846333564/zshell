@@ -59,8 +59,9 @@ type monitorSnapshotRequest struct {
 }
 
 type uiPreferencesRequest struct {
-	UIScale          *float64          `json:"uiScale"`
-	TerminalFontSize *int              `json:"terminalFontSize"`
-	ThemeKey         *string           `json:"themeKey"`
-	CustomTheme      map[string]string `json:"customTheme"`
+	UIScale                *float64          `json:"uiScale"`
+	TerminalFontSize       *int              `json:"terminalFontSize"`
+	ThemeKey               *string           `json:"themeKey"`
+	CustomTheme            map[string]string `json:"customTheme"`
+	GPUAccelerationEnabled *bool             `json:"gpuAccelerationEnabled"`
 }

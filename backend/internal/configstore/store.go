@@ -25,10 +25,11 @@ type File struct {
 }
 
 type Preferences struct {
-	UIScale          float64           `json:"uiScale,omitempty"`
-	TerminalFontSize int               `json:"terminalFontSize,omitempty"`
-	ThemeKey         string            `json:"themeKey,omitempty"`
-	CustomTheme      map[string]string `json:"customTheme,omitempty"`
+	UIScale                float64           `json:"uiScale,omitempty"`
+	TerminalFontSize       int               `json:"terminalFontSize,omitempty"`
+	ThemeKey               string            `json:"themeKey,omitempty"`
+	CustomTheme            map[string]string `json:"customTheme,omitempty"`
+	GPUAccelerationEnabled *bool             `json:"gpuAccelerationEnabled,omitempty"`
 }
 
 func NewDefault() (*Store, error) {
@@ -159,7 +160,8 @@ func preferencesEmpty(preferences Preferences) bool {
 	return preferences.UIScale == 0 &&
 		preferences.TerminalFontSize == 0 &&
 		preferences.ThemeKey == "" &&
-		len(preferences.CustomTheme) == 0
+		len(preferences.CustomTheme) == 0 &&
+		preferences.GPUAccelerationEnabled == nil
 }
 
 func (s *Store) saveFile(file File) error {
