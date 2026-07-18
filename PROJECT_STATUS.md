@@ -2,7 +2,7 @@
 
 ## 项目概览
 
-wiShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/WebView2、Vue、xterm.js、Monaco Editor 和基于 SSH 的 SFTP。当前版本从 `VERSION` 文件读取，本次版本为 `0.3.17`，版本号从 `0.0.1` 起步。发布产物输出到项目根目录的 `release` 文件夹，命名格式为 `wiShell.<版本号>.exe`；本地 `release` 历史包不会自动删除。
+wiShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/WebView2、Vue、xterm.js、Monaco Editor 和基于 SSH 的 SFTP。当前版本从 `VERSION` 文件读取，本次版本为 `0.3.18`，版本号从 `0.0.1` 起步。发布产物输出到项目根目录的 `release` 文件夹，命名格式为 `wiShell.<版本号>.exe`；本地 `release` 历史包不会自动删除。
 
 ## 当前架构
 
@@ -14,7 +14,7 @@ wiShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/We
 - `backend/internal/configstore` 使用 Windows DPAPI 在当前用户配置目录中加密保存连接配置。
 - `frontend/src/App.vue` 管理双栏桌面壳：左侧监控面板、右侧连接标签、终端和文件区域，并提供“关于 wiShell”和“检查更新”弹窗。
 - `build-windows.ps1` 是 release 构建入口，会失败即停地执行 npm、Go 和 Wails 命令，读取 `VERSION`，并输出当前版本 exe 到 `release` 文件夹，不清理旧版本 exe。
-- `.github/workflows/release.yml` 用 GitHub Actions 在 tag 或手动触发时构建 Windows exe，并创建或更新 GitHub Release 资产；`.github/release-names.json` 可为指定版本配置 Release 标题，本次 `0.3.17` 已配置“恢复旧版本保存连接记录”标题。
+- `.github/workflows/release.yml` 用 GitHub Actions 在 tag 或手动触发时构建 Windows exe，并创建或更新 GitHub Release 资产；`.github/release-names.json` 可为指定版本配置 Release 标题，本次 `0.3.18` 已配置“添加了GPU渲染”标题。
 - 后端大文件已按同包功能拆分，HTTP API、SFTP 和更新服务的 Go 源文件都控制在 300 行以内；前端大组件和样式已拆分为组合函数与 CSS 分包，`useFileManager.js` 已恢复为可读多行源码并拆出 `fileManagerUtils.js` 路径/格式化/常量工具，后续可继续按目录树、预加载、编辑器窗口和文件动作拆分。
 - `backend/internal/logsvc` 在启动时初始化日志系统，日志写入当前用户配置目录 `%AppData%\wiShell\log`，按小时生成 `wiShell-YYYYMMDD-HH.log`，并在每次启动时清理 24 小时以前的日志文件。
 
@@ -40,7 +40,7 @@ wiShell 是一个 Windows 桌面 SSH/SFTP 工具，技术栈包括 Go、Wails/We
 - 终端聚焦时 `Ctrl +` / `Ctrl -` 调整字体并持久化到加密配置文件；非终端 UI 缩放也会持久化，终端区域会抵消全局 UI zoom，避免 xterm.js 鼠标选择坐标相对光标左上偏移，同时终端自身保持正常 `100%` flex 尺寸，避免 UI 缩放二次参与布局导致右侧或下方空白；终端支持 `Ctrl+Shift+C` / `Ctrl+Shift+V` 剪贴板快捷键。
 - Monaco Editor 通过动态 import 和 Web Worker 懒加载接入，应用首屏不静态加载 Monaco；启动后会延后到更空闲的阶段后台预热，在线编辑器窗口打开后即可挂载 Monaco，远程内容按 32 KiB 分块并经前端帧泵追加到已有编辑器模型，首次打开会复用同一个加载 Promise。
 - 交互式终端使用 SSH keepalive 和服务端 WebSocket ping/pong，降低空闲或后台断连概率。
-- Wails 窗口为无边框窗口，WebView2 GPU 已禁用以降低启动高负载阶段的渲染进程崩溃风险，并带自定义 wiShell 顶栏、`配置管理` 菜单、可用的 `UI管理 -> 主题设置`、自定义窗口控制和应用风格滚动条；默认主题保持原有 wiShell 配色，并新增 Dracula、Nord、Tokyo Night、Catppuccin Mocha、Gruvbox Dark、One Dark、Solarized Dark 和自定义颜色主题。
+- Wails 窗口为无边框窗口，WebView2 默认开启 GPU 硬件加速以确保空数据和复杂界面的悬浮、点击、滚动及动画及时合成；顶部 `UI管理` 可持久化切换 GPU 渲染，重启后生效。窗口同时带自定义 wiShell 顶栏、`配置管理` 菜单、主题设置、自定义窗口控制和应用风格滚动条；默认主题保持原有 wiShell 配色，并新增 Dracula、Nord、Tokyo Night、Catppuccin Mocha、Gruvbox Dark、One Dark、Solarized Dark 和自定义颜色主题。
 - 未连接首页不渲染左侧监控栏；连接失败信息限制在连接配置面板内换行，避免撑开首页两栏布局。
 - 应用启动后会后台静默检查更新；检查失败或没有更新不打扰用户，发现新版本时才弹窗提示。
 - 日志系统会记录本地 API 返回的错误、流式上传/读取/更新错误、终端 WebSocket/SSH 错误、HTTP panic、入口 panic 和后台 API 服务异常，日志内容保留错误位置和原始错误原因。

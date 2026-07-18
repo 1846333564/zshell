@@ -33,6 +33,12 @@ func main() {
 
 	connectionStore := store.NewMemoryStore()
 	apiServer := httpapi.NewServer(connectionStore, 10*time.Second)
+	gpuAccelerationEnabled, err := apiServer.GPUAccelerationEnabled()
+	if err != nil {
+		gpuAccelerationEnabled = true
+		log.Printf("load GPU acceleration preference failed, using enabled default: %v", err)
+	}
+	log.Printf("WebView2 GPU acceleration enabled: %t", gpuAccelerationEnabled)
 
 	mux := http.NewServeMux()
 	apiServer.RegisterRoutes(mux)
@@ -71,8 +77,10 @@ func main() {
 		Frameless:                true,
 		EnableDefaultContextMenu: true,
 		Windows: &windows.Options{
-			Theme:                windows.Dark,
-			WebviewGpuIsDisabled: true,
+			Theme: windows.Dark,
+			// Honor the stored preference while defaulting to hardware acceleration.
+			// Software rasterisation can make even empty-state interaction visibly lag.
+			WebviewGpuIsDisabled: !gpuAccelerationEnabled,
 			IsZoomControlEnabled: true,
 			DisablePinchZoom:     false,
 			ResizeDebounceMS:     120,

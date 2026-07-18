@@ -8,3 +8,4 @@ backend/build/
 backend/frontend/
 release/*.exe
 !release/.gitkeep
+test-builds/

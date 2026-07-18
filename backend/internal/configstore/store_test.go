@@ -87,3 +87,10 @@ func TestLoadBackfillsLegacyConnectionsWhenCurrentHasOnlyPreferences(t *testing.
 		t.Fatalf("preferences theme = %q, want current preference dracula", preferences.ThemeKey)
 	}
 }
+
+func TestPreferencesEmptyTreatsGPUSettingAsPreference(t *testing.T) {
+	enabled := true
+	if preferencesEmpty(Preferences{GPUAccelerationEnabled: &enabled}) {
+		t.Fatal("GPU acceleration setting must keep current preferences from being replaced")
+	}
+}

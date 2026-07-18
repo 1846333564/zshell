@@ -4,10 +4,10 @@ wiShell 是 Windows 桌面 SSH/SFTP 工具，使用 Go、Wails/WebView2、Vue、
 
 ## 当前版本
 
-- 当前本地版本：`0.3.12`
+- 当前本地版本：`0.3.18`
 - 版本来源：根目录 `VERSION`
-- 本地打包产物：`release/wiShell.0.3.12.exe`
-- 本版本会通过 `v0.3.12` tag 发布 GitHub Release。
+- 本地打包产物：`release/wiShell.0.3.18.exe`
+- 本版本会通过 `v0.3.18` tag 发布 GitHub Release。
 
 ## 文件拆分规则
 
@@ -25,6 +25,7 @@ wiShell 是 Windows 桌面 SSH/SFTP 工具，使用 Go、Wails/WebView2、Vue、
 - 应用更新弹窗支持在下载和校验阶段停止更新，停止后会取消流式请求并阻止进入替换重启流程。
 - 文件管理器降低后台目录预加载压力，文本编辑会先完成远程读取再初始化 Monaco，并修复打开进度层遗漏绑定导致目录树和编辑窗口渲染中断的问题。
 - UI 主题系统支持 wiShell 默认、Dracula、Nord、Tokyo Night、Catppuccin Mocha、Gruvbox Dark、One Dark、Solarized Dark 和自定义颜色。
+- WebView2 默认开启 GPU 硬件加速，顶部 `UI管理` 可持久化切换并在重启后生效。
 - 前端 `FileManager.vue` 保留模板，setup 逻辑拆到 `src/components/useFileManager.js`。
 - 全局样式从 `src/style.css` 拆到 `src/styles` 分包文件。
 

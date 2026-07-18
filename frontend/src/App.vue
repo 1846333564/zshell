@@ -28,9 +28,12 @@
 
           <div class="app-menu-item">
             <button class="app-menu-button" type="button">UI管理</button>
-            <div class="app-menu-dropdown">
+            <div class="app-menu-dropdown ui-menu-dropdown">
               <button type="button" @click="resetUiScale">重置缩放</button>
               <button type="button" @click="showThemeDialog">主题设置</button>
+              <button type="button" :disabled="gpuPreferenceSaving" @click="toggleGpuAcceleration">
+                GPU 渲染：{{ gpuAccelerationEnabled ? '已开启' : '已关闭' }}{{ gpuRestartRequired ? '（重启生效）' : '' }}
+              </button>
               <button type="button" disabled>布局设置</button>
             </div>
           </div>
@@ -301,6 +304,9 @@ const {
   editingConnectionId,
   handleAppContextMenu,
   handleConnect,
+  gpuAccelerationEnabled,
+  gpuPreferenceSaving,
+  gpuRestartRequired,
   handleTerminalFontSizeChange,
   hideAboutDialog,
   minimizeWindow,
@@ -323,6 +329,7 @@ const {
   themeDialog,
   themeOptions,
   toggleMaximizeWindow,
+  toggleGpuAcceleration,
   updateDialog,
   activateSession,
   authLabel,

@@ -65,6 +65,9 @@ func (s *Server) handleUIPreferences(w http.ResponseWriter, r *http.Request) {
 		if req.CustomTheme != nil {
 			preferences.CustomTheme = normalizeCustomTheme(req.CustomTheme)
 		}
+		if req.GPUAccelerationEnabled != nil {
+			preferences.GPUAccelerationEnabled = boolPointer(*req.GPUAccelerationEnabled)
+		}
 		if err := s.saveUIPreferences(preferences); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return

@@ -1,6 +1,6 @@
 package appinfo
 
-var Version = "0.3.13"
+var Version = "0.3.18"
 
 const (
 	ProductName     = "wiShell"

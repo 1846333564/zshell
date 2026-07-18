@@ -18,6 +18,9 @@ export function useUiPreferences() {
   const themeKey = ref(DEFAULT_THEME_KEY);
   const customTheme = ref(createDefaultCustomTheme());
   const activeTheme = ref(resolveTheme(themeKey.value, customTheme.value));
+  const gpuAccelerationEnabled = ref(true);
+  const gpuPreferenceSaving = ref(false);
+  const gpuRestartRequired = ref(false);
   const themeDialog = reactive({
     visible: false,
     draftKey: DEFAULT_THEME_KEY,
@@ -100,6 +103,7 @@ export function useUiPreferences() {
       terminalFontSize.value = clampTerminalFontSize(preferences.terminalFontSize || 14);
       themeKey.value = normalizeThemeKey(preferences.themeKey || DEFAULT_THEME_KEY);
       customTheme.value = normalizeCustomTheme(preferences.customTheme);
+      gpuAccelerationEnabled.value = preferences.gpuAccelerationEnabled !== false;
       applyCurrentTheme();
     } catch (error) {
       console.warn('load ui preferences failed', error);
@@ -113,6 +117,25 @@ export function useUiPreferences() {
   function handleTerminalFontSizeChange(value) {
     terminalFontSize.value = clampTerminalFontSize(value);
     scheduleSavePreferences();
+  }
+
+  async function toggleGpuAcceleration() {
+    if (gpuPreferenceSaving.value) {
+      return;
+    }
+    const previous = gpuAccelerationEnabled.value;
+    gpuAccelerationEnabled.value = !previous;
+    gpuPreferenceSaving.value = true;
+    try {
+      await savePreferencesNow();
+      gpuRestartRequired.value = true;
+      window.alert(`GPU 渲染已${gpuAccelerationEnabled.value ? '开启' : '关闭'}，重启 wiShell 后生效。`);
+    } catch (error) {
+      gpuAccelerationEnabled.value = previous;
+      window.alert(error instanceof Error ? error.message : 'GPU 渲染设置保存失败');
+    } finally {
+      gpuPreferenceSaving.value = false;
+    }
   }
 
   function showThemeDialog() {
@@ -208,6 +231,7 @@ export function useUiPreferences() {
       terminalFontSize: terminalFontSize.value,
       themeKey: themeKey.value,
       customTheme: customTheme.value,
+      gpuAccelerationEnabled: gpuAccelerationEnabled.value,
     });
   }
 
@@ -223,6 +247,9 @@ export function useUiPreferences() {
     themeKey,
     customTheme,
     activeTheme,
+    gpuAccelerationEnabled,
+    gpuPreferenceSaving,
+    gpuRestartRequired,
     themeDialog,
     themeOptions: THEME_OPTIONS,
     themeColorFields: THEME_COLOR_FIELDS,
@@ -232,6 +259,7 @@ export function useUiPreferences() {
     applyCurrentTheme,
     loadUIPreferences,
     handleTerminalFontSizeChange,
+    toggleGpuAcceleration,
     showThemeDialog,
     cancelThemeDialog,
     selectThemeOption,
