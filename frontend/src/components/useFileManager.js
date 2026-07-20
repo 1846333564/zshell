@@ -55,6 +55,10 @@ import {
   treeContextTarget,
   virtualSlice,
 } from "./fileTreeModel";
+import {
+  buildDirectoryCompletionIndex,
+} from "./pathCompletion";
+import { usePathCompletion } from "./usePathCompletion";
 
 const FILE_ROW_HEIGHT = 29;
 const FILE_HEADER_HEIGHT = 33;
@@ -146,6 +150,28 @@ function E(E) {
       source: "blank",
     }),
     fe = r({ x: 0, y: 0, width: 320, height: 260 });
+  const pathCompletionModel = usePathCompletion({
+      connectionId: () => E.connectionId,
+      currentPath: T,
+      pathDraft: B,
+      hasCache: (path) => hasCachedDirectory(E.connectionId, path),
+      indexForParent: (path) => rawCachedDirectoryIndex(E.connectionId, path),
+      cachedDirectories: () => St(E.connectionId),
+      loadDirectory: (path, options) => We(path, options),
+      navigate: async (path) => {
+        V.value = !1;
+        on();
+        await yt(path);
+        return On(T.value) || On(path);
+      },
+      onInput: () => {
+        V.value = !1;
+      },
+    }),
+    pathCompletion = pathCompletionModel.completion,
+    pathCompletionOpen = pathCompletionModel.open,
+    pathCompletionVisible = pathCompletionModel.visible,
+    pathCompletionSummary = pathCompletionModel.summary;
   i(
     () => [E.connectionId, E.workMode],
     async ([e, t]) => {
@@ -159,6 +185,7 @@ function E(E) {
   ),
     i(T, (e) => {
       B.value = e;
+      pathCompletionOpen.value = !1;
     }),
     i(fileListViewport, (element, previous) => observeViewport(element, previous)),
     i(pathTreeViewport, (element, previous) => observeViewport(element, previous));
@@ -477,11 +504,13 @@ function E(E) {
   }
   function Ve(e = Xe(E.workMode)) {
     ct(),
+      pathCompletionModel.reset(),
       preloadFailures.clear(),
       (Q.value = Ge(e)),
       (treeSelectedPath.value = On(e)),
       (Y.value = new Map()),
-      (V.value = !1);
+      (V.value = !1),
+      (pathCompletionOpen.value = !1);
   }
   function je() {
     return T.value || Xe(E.workMode);
@@ -501,6 +530,9 @@ function E(E) {
   function rawCachedDirectoryEntries(e, t) {
     return x.get(Qe(e, t))?.entries || null;
   }
+  function rawCachedDirectoryIndex(e, t) {
+    return x.get(Qe(e, t))?.directoryIndex || [];
+  }
   function hasCachedDirectory(e, t) {
     return x.has(Qe(e, t));
   }
@@ -515,8 +547,10 @@ function E(E) {
           requestedPath: t,
           path: i,
           entries: s,
+          directoryIndex: buildDirectoryCompletionIndex(s),
           cachedAt: Date.now(),
         }),
+        pathCompletionModel.notifyIndexChanged(),
         !1 !== r.rememberTree && tt(i, s);
       x.size > DIRECTORY_CACHE_LIMIT;
 
@@ -820,77 +854,6 @@ function E(E) {
     element === fileListViewport.value && syncFileViewport(element);
     element === pathTreeViewport.value && syncTreeViewport(element);
   }
-  async function gt(e) {
-    const t = [e],
-      n = bt(e);
-    n && n !== e && t.push(n);
-    for (const e of t) {
-      const t = Dt(e);
-      if (t && !Ze(E.connectionId, t))
-        try {
-          const e = await f(E.connectionId, t),
-            n = e.path || t,
-            o = Array.isArray(e.entries) ? e.entries : [];
-          Je(E.connectionId, t, n, o, { rememberTree: !1 }),
-            n !== t && Je(E.connectionId, n, n, o, { rememberTree: !1 });
-        } catch {}
-    }
-  }
-  function wt(e) {
-    const t = Pt();
-    let n = Mt(e, t);
-    if (0 === n.length) {
-      const o = bt(e);
-      o && o !== e && (n = Mt(o, t));
-    }
-    return n;
-  }
-  function Pt() {
-    const e = new Set([
-      g,
-      w,
-      ...Object.values(P),
-      ...$e.value,
-      ...Array.from(Q.value.keys()),
-    ]);
-    for (const t of C.value) t.isDir && e.add(t.path);
-    for (const t of St(E.connectionId)) {
-      e.add(t.path);
-      for (const n of t.entries) n.isDir && e.add(n.path);
-    }
-    return e;
-  }
-  function Mt(e, t) {
-    const n = new Set();
-    for (const o of t) {
-      const t = xt(e, On(o));
-      t && n.add(t);
-    }
-    return Array.from(n).sort(Yn);
-  }
-  function bt(e) {
-    const t = On(T.value);
-    if (!t || t === g || t === w) return "";
-    const n = String(e || "").trim();
-    if (!n) return "";
-    const o = n.startsWith(g) ? n.slice(1) : n;
-    return !o || o.includes("/") ? "" : On(`${t}/${o}`);
-  }
-  function Dt(e) {
-    const t = On(e);
-    return t
-      ? t === g || t === w
-        ? ""
-        : t.endsWith("/") && t !== g
-          ? On(t.slice(0, -1)) || g
-          : Wn(t) || g
-      : "";
-  }
-  function xt(e, t) {
-    if (!t || t === e || !t.startsWith(e)) return "";
-    const n = t.slice(e.length).indexOf("/");
-    return -1 === n ? t : t.slice(0, e.length + n);
-  }
   function St(e) {
     if (!e) return [];
     const t = `${e}\0`,
@@ -905,24 +868,34 @@ function E(E) {
       .filter((e) => e.path);
     if (0 === t.length) return;
     const n = `${E.connectionId}\0`;
+    let cacheChanged = !1;
     for (const [e, o] of Array.from(x.entries())) {
       if (!e.startsWith(n)) continue;
       const r = On(o.path || o.requestedPath);
       if (t.some((e) => e.isDir && Un(r, e.path))) {
         x.delete(e);
+        cacheChanged = !0;
         continue;
       }
       const a = et(o.entries).filter((e) => !t.some((t) => Ct(e, t)));
       a.length !== o.entries.length &&
-        x.set(e, { ...o, entries: a, cachedAt: Date.now() });
+        (x.set(e, {
+          ...o,
+          entries: a,
+          directoryIndex: buildDirectoryCompletionIndex(a),
+          cachedAt: Date.now(),
+        }),
+        (cacheChanged = !0));
     }
+    cacheChanged && pathCompletionModel.notifyIndexChanged();
     (C.value = C.value.filter((e) => !t.some((t) => Ct(e, t)))), Tt(t);
   }
   function Et(e) {
     const t = On(e);
     if (!t || !E.connectionId) return;
     const n = [Qe(E.connectionId, t)];
-    for (const e of n) e && x.delete(e);
+    for (const e of n)
+      e && x.delete(e) && pathCompletionModel.notifyIndexChanged();
   }
   function Ct(e, t) {
     const n = On(e.path);
@@ -1567,7 +1540,11 @@ function E(E) {
   function ln(e) {
     const t = e.target;
     if (
-      (V.value &&
+      (pathCompletionOpen.value &&
+        t instanceof Element &&
+        !t.closest(".path-input-completion") &&
+        (pathCompletionOpen.value = !1),
+      V.value &&
         t instanceof Element &&
         (t.closest(".path-history-popover") ||
           t.closest(".path-history-button") ||
@@ -1960,6 +1937,7 @@ function E(E) {
         ct(),
         Le(),
         ot(),
+        pathCompletionModel.dispose(),
         cancelAllEditorReads(),
         directoryLoadController?.abort(),
         (directoryLoadController = null),
@@ -2014,6 +1992,10 @@ function E(E) {
       pendingUploadPath: K,
       pathHistoryStats: Y,
       pathHistoryOpen: V,
+      pathCompletion,
+      pathCompletionOpen,
+      pathCompletionVisible,
+      pathCompletionSummary,
       columnWidths: X,
       sortState: j,
       sortPulseKey: q,
@@ -2130,6 +2112,7 @@ function E(E) {
       mergePathMeta: ft,
       rememberPathHistory: mt,
       togglePathHistory: function () {
+        pathCompletionOpen.value = !1;
         E.connectionId && 0 !== $e.value.length
           ? V.value
             ? (V.value = !1)
@@ -2140,35 +2123,26 @@ function E(E) {
       trimPathHistoryStats: pt,
       scrollPathHistoryToBottom: vt,
       openHistoryPath: function (e) {
-        (V.value = !1), on(), yt(e);
+        (V.value = !1), (pathCompletionOpen.value = !1), on(), yt(e);
       },
       activateTreeNode,
       openDir: yt,
       openEntry: function (e) {
         e.isDir ? yt(e.path) : Ft(b, e);
       },
-      onPathInput: function (e) {
-        B.value = e.target.value || "";
-      },
-      commitPathDraft: function (e) {
-        const t = B.value.trim();
-        t ? ((V.value = !1), on(), yt(t)) : (B.value = T.value);
-      },
-      completePathDraft: async function () {
-        if (!E.connectionId) return;
-        const e = On(B.value);
-        if (!e) return;
-        await gt(e);
-        const t = wt(e);
-        1 === t.length && (B.value = t[0]);
-      },
-      ensureCompletionCaches: gt,
-      pathCompletionMatches: wt,
-      pathCompletionCandidates: Pt,
-      completionMatchesForPrefix: Mt,
-      currentRelativeCompletionPrefix: bt,
-      completionParentPath: Dt,
-      completionTarget: xt,
+      onPathInput: pathCompletionModel.onInput,
+      commitPathDraft: pathCompletionModel.commit,
+      completePathDraft: pathCompletionModel.complete,
+      dismissPathCompletion: pathCompletionModel.dismiss,
+      openPathCompletionItem: pathCompletionModel.openItem,
+      pathCompletionItemLabel: pathCompletionModel.itemLabel,
+      ensureCompletionCaches: pathCompletionModel.ensureCompletionCache,
+      pathCompletionMatches: pathCompletionModel.matches,
+      pathCompletionCandidates: pathCompletionModel.candidates,
+      completionMatchesForPrefix: pathCompletionModel.matches,
+      currentRelativeCompletionPrefix: pathCompletionModel.target,
+      completionParentPath: pathCompletionModel.parent,
+      completionTarget: pathCompletionModel.commonPrefix,
       cachedDirectoriesForConnection: St,
       syncDirectoryCacheAfterDelete: It,
       invalidateDirectoryCache: Et,
@@ -2408,7 +2382,7 @@ function E(E) {
         e.target.closest(".file-row") || (on(), revealTreePath(T.value)), sn();
       },
       onShellClick: function () {
-        sn(), Cn(), (V.value = !1);
+        sn(), Cn(), (V.value = !1), (pathCompletionOpen.value = !1);
       },
       openEntryContextMenu: function (e, t, n) {
         (_.value = new Set([t.path])),

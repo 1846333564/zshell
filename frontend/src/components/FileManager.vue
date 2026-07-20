@@ -11,16 +11,46 @@
       >
         ◷
       </button>
-      <input
-        class="path-input"
-        :value="pathDraft"
-        :disabled="!connectionId || loading"
-        @input="onPathInput"
-        @change="commitPathDraft"
-        @keydown.tab.prevent.stop="completePathDraft"
-        @click.stop
-        @contextmenu.stop
-      />
+      <div class="path-input-completion" @click.stop @contextmenu.stop>
+        <input
+          class="path-input"
+          :value="pathDraft"
+          :disabled="!connectionId || loading"
+          autocomplete="off"
+          spellcheck="false"
+          @input="onPathInput"
+          @change="commitPathDraft"
+          @blur="dismissPathCompletion"
+          @keydown.enter.prevent.stop="commitPathDraft"
+          @keydown.tab.prevent.stop="completePathDraft"
+          @keydown.escape.prevent.stop="dismissPathCompletion"
+        />
+        <div
+          v-if="pathCompletionVisible"
+          class="path-completion-popover"
+          role="listbox"
+          aria-label="目录补全候选"
+        >
+          <button
+            v-for="item in pathCompletion.items"
+            :key="item.path"
+            type="button"
+            role="option"
+            :title="item.path"
+            @mousedown.prevent
+            @click="openPathCompletionItem(item)"
+          >
+            <span class="path-completion-folder">◇</span>
+            <span class="path-completion-name">{{ pathCompletionItemLabel(item) }}</span>
+          </button>
+          <div class="path-completion-footer">
+            <span>{{ pathCompletionSummary }}</span>
+            <span v-if="pathCompletion.total > pathCompletion.items.length">
+              显示前 {{ pathCompletion.items.length }} 项
+            </span>
+          </div>
+        </div>
+      </div>
       <span class="hint">{{ statusText }}</span>
     </div>
 
@@ -490,6 +520,7 @@ const {
   cutSelectionFromMenu,
   deleteFromMenu,
   discardEditorFromPrompt,
+  dismissPathCompletion,
   displayPath,
   downloadContextEntry,
   downloadContextItem,
@@ -539,10 +570,15 @@ const {
   openEntry,
   openEntryContextMenu,
   openHistoryPath,
+  openPathCompletionItem,
   openPathContextMenu,
   orderedEntries,
   pasteClipboardFromMenu,
   pathDraft,
+  pathCompletion,
+  pathCompletionItemLabel,
+  pathCompletionSummary,
+  pathCompletionVisible,
   pathHistory,
   pathHistoryButton,
   pathHistoryListRef,

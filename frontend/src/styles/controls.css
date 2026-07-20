@@ -142,10 +142,18 @@
 }
 
 .file-path-row {
+  position: relative;
+  z-index: 24;
   display: flex;
   gap: 6px;
   align-items: center;
   margin-bottom: 4px;
+}
+
+.path-input-completion {
+  position: relative;
+  min-width: 220px;
+  flex: 1;
 }
 
 .path-history-button {
@@ -171,13 +179,73 @@
 }
 
 .path-input {
-  min-width: 220px;
-  flex: 1;
+  width: 100%;
+  min-width: 0;
   border: 1px solid rgba(var(--line-rgb), 0.3);
   border-radius: 8px;
   background: rgba(var(--panel-rgb), 0.8);
   color: var(--text);
   padding: 7px 10px;
+}
+
+.path-completion-popover {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  right: 0;
+  z-index: 28;
+  max-height: min(380px, calc(100vh - 126px));
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid rgba(var(--line-rgb), 0.28);
+  border-radius: 8px;
+  background: rgba(var(--panel-rgb), 0.98);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.38);
+  overscroll-behavior: contain;
+}
+
+.path-completion-popover button {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.path-completion-popover button:hover {
+  background: rgba(var(--primary-2-rgb), 0.16);
+}
+
+.path-completion-folder {
+  flex: 0 0 auto;
+  color: var(--primary-2);
+  font-size: 14px;
+}
+
+.path-completion-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: Consolas, "Cascadia Mono", monospace;
+}
+
+.path-completion-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+  padding: 6px 9px 2px;
+  border-top: 1px solid rgba(var(--line-rgb), 0.16);
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .hint {
