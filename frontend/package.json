@@ -1,10 +1,11 @@
 {
   "name": "wishell-frontend",
   "private": true,
-  "version": "0.3.18",
+  "version": "0.4.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "node --test ./src/components/fileTreeModel.test.js",
     "build": "vite build",
     "preview": "vite preview --port 4173"
   },

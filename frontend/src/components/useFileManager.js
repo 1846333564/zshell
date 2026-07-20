@@ -1,5 +1,6 @@
 import {
   computed as e,
+  markRaw as markRawChunks,
   nextTick as t,
   onBeforeUnmount as n,
   onMounted as o,
@@ -15,6 +16,7 @@ import {
   downloadRemoteItems as d,
   listRemoteFiles as f,
   readRemoteTextFileWithProgress as m,
+  renameRemoteItem,
   saveRemoteTextFile as h,
   transferRemoteItems as p,
   uploadRemoteItems as v,
@@ -47,6 +49,18 @@ import {
   parentPath as Wn,
   pathDepth as Hn,
 } from "./fileManagerUtils";
+import {
+  buildTreeRows,
+  replacePathPrefix,
+  treeContextTarget,
+  virtualSlice,
+} from "./fileTreeModel";
+
+const FILE_ROW_HEIGHT = 29;
+const FILE_HEADER_HEIGHT = 33;
+const TREE_ROW_HEIGHT = 27;
+const VIRTUAL_OVERSCAN = 8;
+const EDITOR_PREVIEW_PUBLISH_INTERVAL_MS = 1000;
 const x = new Map();
 function E(E) {
   const C = a([]),
@@ -86,19 +100,42 @@ function E(E) {
     }),
     Z = a([]),
     J = a(""),
-    Q = a(Ge(T.value));
+    Q = a(Ge(T.value)),
+    treeSelectedPath = a(T.value),
+    fileListViewport = a(null),
+    pathTreeViewport = a(null),
+    contextMenuElement = a(null),
+    fileScrollTop = a(0),
+    treeScrollTop = a(0),
+    fileViewportHeight = a(520),
+    treeViewportHeight = a(520),
+    renameState = r({
+      path: "",
+      originalName: "",
+      name: "",
+      isDir: !1,
+      surface: "",
+      saving: !1,
+      error: "",
+    });
   let ee = null,
     te = null,
     ne = null,
     oe = 900,
     re = 0,
+    navigationRevision = 0,
     ae = 0,
     ie = null,
     se = null,
     le = [],
     ce = null,
     ue = null,
-    preloadFailures = new Set();
+    preloadFailures = new Set(),
+    directoryLoadController = null,
+    viewportResizeObserver = null,
+    activeRenameInput = null,
+    contextMenuPositionRevision = 0;
+  const editorReadControllers = new Map();
   const de = r({
       visible: !1,
       x: 0,
@@ -106,6 +143,7 @@ function E(E) {
       entry: null,
       targetPath: "",
       targetKind: "blank",
+      source: "blank",
     }),
     fe = r({ x: 0, y: 0, width: 320, height: 260 });
   i(
@@ -121,23 +159,33 @@ function E(E) {
   ),
     i(T, (e) => {
       B.value = e;
-    });
+    }),
+    i(fileListViewport, (element, previous) => observeViewport(element, previous)),
+    i(pathTreeViewport, (element, previous) => observeViewport(element, previous));
   const me = e(() => [...C.value].sort(ke)),
-    he = e(() => me.value.filter((e) => _.value.has(e.path))),
+    entryByPath = e(() => new Map(C.value.map((entry) => [entry.path, entry]))),
+    he = e(() =>
+      Array.from(_.value)
+        .map((path) => entryByPath.value.get(path))
+        .filter(Boolean),
+    ),
     pe = e(() => he.value.length > 0),
     ve = e(() => Boolean(E.connectionId && F.value?.items?.length)),
     ye = e(() => de.entry),
-    ge = e(() => Boolean(de.entry?.isDir || "directory" === de.targetKind)),
+    ge = e(() => "directory" === de.targetKind),
     we = e(() => de.entry?.path || de.targetPath || je()),
-    Pe = e(() => (de.entry?.isDir ? de.entry.path : de.targetPath || je())),
+    Pe = e(() => ("directory" === de.targetKind ? we.value : de.targetPath || je())),
     Me = e(() => {
-      if (pe.value || de.entry) return null;
-      const e = On(de.targetPath);
-      return "directory" === de.targetKind && $t(e)
-        ? { path: e, isDir: !0 }
+      if (de.entry) {
+        return { ...de.entry, path: On(de.entry.path), isDir: Boolean(de.entry.isDir) };
+      }
+      const path = On(de.targetPath);
+      return "directory" === de.targetKind && path
+        ? { path, name: Xn(path), isDir: !0 }
         : null;
     }),
-    be = e(() => pe.value || Boolean(Me.value)),
+    contextCanMutate = e(() => Boolean(Me.value && $t(Me.value.path))),
+    be = e(() => contextCanMutate.value),
     De = e(() => S.map((e) => `${X[e.key]}px`).join(" ")),
     xe = e(() => Z.value.find((e) => e.id === J.value) || null),
     Se = e(() =>
@@ -250,25 +298,61 @@ function E(E) {
   function Le() {
     ue && (window.clearTimeout(ue), (ue = null));
   }
-  const Fe = e(() => {
-    const e = Array.from(Q.value.keys()).filter(Boolean).sort(Yn),
-      t = new Set(e.map((e) => Wn(e)).filter(Boolean));
-    return e
-      .filter((e) => Kn(e))
-      .map((e) => {
-        const n = Q.value.get(e) || {};
-        return {
-          path: e,
-          depth: Hn(e),
-          opened: Boolean(n.opened),
-          collapsed: Boolean(n.collapsed),
-          hasChildren: t.has(e),
-        };
+  const Fe = e(() => buildTreeRows(Q.value)),
+    treeLayout = e(() => {
+      const index = new Map();
+      let contentWidth = 280;
+      Fe.value.forEach((row, rowIndex) => {
+        contentWidth = Math.max(contentWidth, Number(row.contentWidth) || 0);
+        index.set(row.path, rowIndex);
       });
-  });
+      return { index, contentWidth };
+    }),
+    treeRowIndex = e(() => treeLayout.value.index),
+    fileRange = e(() =>
+      virtualSlice(
+        me.value.length,
+        fileScrollTop.value,
+        fileViewportHeight.value,
+        FILE_ROW_HEIGHT,
+        VIRTUAL_OVERSCAN,
+      ),
+    ),
+    visibleEntries = e(() =>
+      me.value.slice(fileRange.value.start, fileRange.value.end).map((entry, offset) => ({
+        entry,
+        index: fileRange.value.start + offset,
+      })),
+    ),
+    treeRange = e(() =>
+      virtualSlice(
+        Fe.value.length,
+        treeScrollTop.value,
+        treeViewportHeight.value,
+        TREE_ROW_HEIGHT,
+        VIRTUAL_OVERSCAN,
+      ),
+    ),
+    visibleTreeNodes = e(() =>
+      Fe.value.slice(treeRange.value.start, treeRange.value.end).map((node, offset) => ({
+        ...node,
+        virtualIndex: treeRange.value.start + offset,
+      })),
+    ),
+    fileVirtualHeight = e(() => me.value.length * FILE_ROW_HEIGHT),
+    treeVirtualHeight = e(() => Fe.value.length * TREE_ROW_HEIGHT),
+    treeContentWidth = e(() => treeLayout.value.contentWidth),
+    fileContentWidth = e(() =>
+      S.reduce((total, column) => total + Number(X[column.key] || column.width), 0) +
+      8 * Math.max(0, S.length - 1) +
+      16,
+    );
   async function Oe(e = T.value || Xe(E.workMode), t = {}) {
     if (!E.connectionId) return;
     !1 !== t.cancelPreload && ot();
+    directoryLoadController?.abort();
+    const controller = new AbortController();
+    directoryLoadController = controller;
     const n = e || Xe(E.workMode),
       o = (re += 1),
       r = !1 === t.useCache ? null : Ze(E.connectionId, n);
@@ -281,16 +365,18 @@ function E(E) {
       : ((A.value = !0), ($.value = !1)),
       (z.value = "");
     try {
-      const e = await We(n, { rememberTree: !0 });
+      const e = await We(n, { rememberTree: !0, signal: controller.signal });
       if (o !== re) return;
       Ye(e.resolvedPath, e.entries, n), nt();
     } catch (e) {
+      if ("AbortError" === e?.name || controller.signal.aborted) return;
       o === re &&
         (z.value =
           e instanceof Error
             ? e.message
             : "\u8bfb\u53d6\u76ee\u5f55\u5931\u8d25");
     } finally {
+      directoryLoadController === controller && (directoryLoadController = null);
       o === re && ((A.value = !1), ($.value = !1));
     }
   }
@@ -307,6 +393,8 @@ function E(E) {
   async function He(e = T.value || Xe(E.workMode)) {
     if (!E.connectionId) return;
     ot();
+    directoryLoadController?.abort();
+    directoryLoadController = null;
     const t = (re += 1),
       n = e || T.value || Xe(E.workMode),
       o = On(n),
@@ -369,20 +457,29 @@ function E(E) {
       !(!t || !e) && (On(e.requestedPath) === t || On(e.resolvedPath) === t)
     );
   }
-  function Ye(e, t, n = e) {
-    (T.value = e),
-      (C.value = et(t)),
-      mt(e),
-      ut(g),
-      ut(w),
-      (n === w || n.startsWith("~/")) && ut(w, { opened: !0 }),
-      tt(e, C.value),
-      rn();
+  function Ye(e, entries, n = e) {
+    const pathChanged = On(T.value) !== On(e);
+    T.value = e;
+    treeSelectedPath.value = e;
+    C.value = et(entries);
+    mt(e);
+    ut(g);
+    ut(w);
+    (n === w || n.startsWith("~/")) && ut(w, { opened: !0 });
+    tt(e, C.value);
+    rn();
+    if (pathChanged) {
+      fileScrollTop.value = 0;
+      t(() => {
+        if (fileListViewport.value) fileListViewport.value.scrollTop = 0;
+      });
+    }
   }
   function Ve(e = Xe(E.workMode)) {
     ct(),
       preloadFailures.clear(),
       (Q.value = Ge(e)),
+      (treeSelectedPath.value = On(e)),
       (Y.value = new Map()),
       (V.value = !1);
   }
@@ -400,6 +497,12 @@ function E(E) {
   function Ze(e, t) {
     const n = x.get(Qe(e, t));
     return n ? { ...n, entries: et(n.entries) } : null;
+  }
+  function rawCachedDirectoryEntries(e, t) {
+    return x.get(Qe(e, t))?.entries || null;
+  }
+  function hasCachedDirectory(e, t) {
+    return x.has(Qe(e, t));
   }
   function Je(e, t, n, o, r = {}) {
     const a = Qe(e, t);
@@ -430,14 +533,34 @@ function E(E) {
     return Array.isArray(e) ? e.map((e) => ({ ...e })) : [];
   }
   function tt(e, t) {
-    const n = new Map(Q.value);
-    dt(n, e), ft(n, e, { opened: !0, collapsed: !1 }), (Q.value = n);
-    it(
-      t
-        .filter((e) => e.isDir)
-        .map((e) => On(e.path))
+    const parent = On(e),
+      childDirectories = t
+        .filter((entry) => entry.isDir)
+        .map((entry) => On(entry.path))
         .filter(Boolean),
-    );
+      paths = new Map(Q.value);
+    dt(paths, parent);
+    const collapsed = Boolean(paths.get(parent)?.collapsed);
+    removeStaleTreeChildren(paths, parent, new Set(childDirectories));
+    ft(paths, parent, {
+      opened: !0,
+      collapsed,
+      listingKnown: !0,
+      totalEntryCount: t.length,
+      childDirPaths: childDirectories,
+    });
+    Q.value = paths;
+    it(childDirectories);
+  }
+  function removeStaleTreeChildren(paths, parent, validChildren) {
+    const staleRoots = [];
+    for (const path of paths.keys()) {
+      if (Wn(path) === parent && !validChildren.has(path)) staleRoots.push(path);
+    }
+    if (staleRoots.length === 0) return;
+    for (const path of Array.from(paths.keys())) {
+      if (staleRoots.some((root) => path === root || path.startsWith(`${root}/`))) paths.delete(path);
+    }
   }
   function nt() {
     ot();
@@ -455,7 +578,7 @@ function E(E) {
             a = Array.from({ length: r }, async () => {
               for (; o.length > 0 && ae === e && !t.signal.aborted; ) {
                 const n = o.shift();
-                if (!n || Ze(E.connectionId, n)) continue;
+                if (!n || hasCachedDirectory(E.connectionId, n)) continue;
                 try {
                   await We(n, { signal: t.signal, rememberTree: !1 });
                   preloadFailures.delete(Qe(E.connectionId, n));
@@ -498,7 +621,7 @@ function E(E) {
           s = Qe(E.connectionId, i);
         if (!i || t.has(i)) continue;
         t.add(i);
-        if (Ze(E.connectionId, i)) {
+        if (hasCachedDirectory(E.connectionId, i)) {
           n.push(i);
           continue;
         }
@@ -593,7 +716,109 @@ function E(E) {
     });
   }
   function yt(e) {
-    A.value || ((V.value = !1), on(), Oe(e));
+    const path = On(e);
+    if (!path) return;
+    navigationRevision += 1;
+    revealTreePath(path);
+    V.value = !1;
+    on();
+    return Oe(path);
+  }
+  async function activateTreeNode(node) {
+    const path = On(node?.path || node);
+    if (!path) return;
+    const isCurrent = On(T.value) === path;
+    const canToggle = Boolean(node?.hasChildren);
+
+    if (canToggle && !node.collapsed) {
+      const paths = new Map(Q.value);
+      ft(paths, path, { opened: !0, collapsed: !0 });
+      Q.value = paths;
+      if (!isCurrent) {
+        await yt(path);
+        return;
+      }
+      revealTreePath(path);
+      V.value = !1;
+      on();
+      t(() => scrollTreePathIntoView(path));
+      return;
+    }
+
+    if (canToggle && node.collapsed) {
+      const paths = new Map(Q.value);
+      ft(paths, path, { opened: !0, collapsed: !1 });
+      Q.value = paths;
+      if (isCurrent) {
+        V.value = !1;
+        on();
+        await expandDirectory(path);
+        return;
+      }
+    }
+
+    if (!canToggle && isCurrent) {
+      revealTreePath(path);
+      V.value = !1;
+      on();
+      return;
+    }
+    await yt(path);
+  }
+  function revealTreePath(value) {
+    const path = On(value);
+    if (!path) return;
+    treeSelectedPath.value = path;
+    let needsMetaUpdate = !Q.value.has(path);
+    let ancestor = Wn(path);
+    while (ancestor) {
+      const meta = Q.value.get(ancestor);
+      if (!meta || meta.collapsed) {
+        needsMetaUpdate = !0;
+        break;
+      }
+      ancestor = Wn(ancestor);
+    }
+    if (needsMetaUpdate) {
+      const paths = new Map(Q.value);
+      dt(paths, path);
+      ancestor = Wn(path);
+      while (ancestor) {
+        ft(paths, ancestor, { collapsed: !1 });
+        ancestor = Wn(ancestor);
+      }
+      Q.value = paths;
+    }
+    t(() => scrollTreePathIntoView(path));
+  }
+  function scrollTreePathIntoView(value) {
+    const path = On(value);
+    const viewport = pathTreeViewport.value;
+    const index = treeRowIndex.value.get(path);
+    if (!viewport || !Number.isInteger(index)) return;
+    const top = index * TREE_ROW_HEIGHT;
+    const bottom = top + TREE_ROW_HEIGHT;
+    const viewportTop = viewport.scrollTop;
+    const viewportBottom = viewportTop + viewport.clientHeight;
+    if (top < viewportTop) viewport.scrollTop = top;
+    else if (bottom > viewportBottom) viewport.scrollTop = Math.max(0, bottom - viewport.clientHeight);
+    treeScrollTop.value = viewport.scrollTop;
+  }
+  function syncFileViewport(element = fileListViewport.value) {
+    if (!element) return;
+    fileScrollTop.value = Math.max(0, element.scrollTop - FILE_HEADER_HEIGHT);
+    fileViewportHeight.value = Math.max(FILE_ROW_HEIGHT, element.clientHeight - FILE_HEADER_HEIGHT);
+  }
+  function syncTreeViewport(element = pathTreeViewport.value) {
+    if (!element) return;
+    treeScrollTop.value = Math.max(0, element.scrollTop);
+    treeViewportHeight.value = Math.max(TREE_ROW_HEIGHT, element.clientHeight);
+  }
+  function observeViewport(element, previous) {
+    previous && viewportResizeObserver?.unobserve(previous);
+    element && viewportResizeObserver?.observe(element);
+    element === fileListViewport.value && syncFileViewport(element);
+    element === pathTreeViewport.value && syncTreeViewport(element);
   }
   async function gt(e) {
     const t = [e],
@@ -741,17 +966,20 @@ function E(E) {
   }
   async function Nt(e, t = [], n = je()) {
     if (!E.connectionId || (0 === e.length && 0 === t.length)) return;
-    (k.value = !0), (z.value = ""), Mn(e, t, n || je());
+    const targetPath = On(n || je());
+    (k.value = !0), (z.value = ""), Mn(e, t, targetPath);
     let o = !1;
     try {
-      await v(E.connectionId, n || je(), e, t, bn),
+      await v(E.connectionId, targetPath, e, t, bn),
         (o = !0),
         xn(),
-        Et(n || je()),
-        await Oe(T.value || Xe(E.workMode), { useCache: !1 });
+        Et(targetPath),
+        await refreshAffectedDirectories([targetPath]);
     } catch (e) {
-      const t = e instanceof Error ? e.message : "\u4e0a\u4f20\u5931\u8d25";
-      (z.value = t), Sn(t);
+      const errorMessage = e instanceof Error ? e.message : "\u4e0a\u4f20\u5931\u8d25";
+      Et(targetPath);
+      await refreshAffectedDirectories([targetPath]);
+      (z.value = errorMessage), Sn(errorMessage);
     } finally {
       (k.value = !1), o && In();
     }
@@ -764,6 +992,190 @@ function E(E) {
       } catch (e) {
         z.value = e instanceof Error ? e.message : "\u4e0b\u8f7d\u5931\u8d25";
       }
+    }
+  }
+  async function downloadContextItem() {
+    const item = Me.value ? { ...Me.value } : null;
+    sn();
+    if (!item || !E.connectionId) return;
+    z.value = "";
+    try {
+      if (item.isDir) {
+        const label = item.path === g ? "root" : item.path === w ? "home" : item.name || Xn(item.path) || "directory";
+        await d(E.connectionId, [item.path], `${label}.zip`);
+      } else {
+        await _t(item.path, item.name);
+      }
+    } catch (error) {
+      z.value = error instanceof Error ? error.message : "\u4e0b\u8f7d\u5931\u8d25";
+    }
+  }
+  async function refreshTargetDirectory(value) {
+    const path = On(value);
+    if (!path || !E.connectionId) return;
+    if (path === On(T.value)) {
+      await Oe(path, { useCache: !1 });
+      return;
+    }
+    A.value = !0;
+    z.value = "";
+    try {
+      await We(path, { rememberTree: !0 });
+    } catch (error) {
+      z.value = error instanceof Error ? error.message : "\u5237\u65b0\u76ee\u5f55\u5931\u8d25";
+    } finally {
+      A.value = !1;
+    }
+  }
+  async function refreshAffectedDirectories(values) {
+    const paths = Array.from(
+      new Set((Array.isArray(values) ? values : [values]).map((value) => On(value)).filter(Boolean)),
+    );
+    if (!E.connectionId || paths.length === 0) return { refreshedCurrent: !1, failures: [] };
+    const currentPath = On(T.value);
+    const currentNavigationRevision = navigationRevision;
+    let currentListing = null;
+    let refreshedCurrent = !1;
+    const failures = [];
+    const results = await Promise.allSettled(
+      paths.map((path) => We(path, { rememberTree: !0 })),
+    );
+    results.forEach((result, index) => {
+      if (result.status === "rejected") {
+        failures.push({ path: paths[index], error: result.reason });
+        return;
+      }
+      if (Ke(result.value, currentPath)) currentListing = result.value;
+    });
+    if (
+      currentListing &&
+      On(T.value) === currentPath &&
+      navigationRevision === currentNavigationRevision
+    ) {
+      Ye(currentListing.resolvedPath, currentListing.entries, currentListing.requestedPath);
+      nt();
+      refreshedCurrent = !0;
+    }
+    if (failures.length > 0) {
+      z.value = `操作已完成，但 ${failures.length} 个目录刷新失败`;
+    }
+    return { refreshedCurrent, failures };
+  }
+  async function expandDirectory(value) {
+    const path = On(value);
+    if (!path || !E.connectionId) return;
+    revealTreePath(path);
+    const paths = new Map(Q.value);
+    ft(paths, path, { opened: !0, collapsed: !1 });
+    Q.value = paths;
+    const cached = Ze(E.connectionId, path);
+    if (cached) {
+      tt(cached.path || path, cached.entries);
+      t(() => scrollTreePathIntoView(path));
+      return;
+    }
+    A.value = !0;
+    z.value = "";
+    try {
+      await We(path, { rememberTree: !0 });
+      t(() => scrollTreePathIntoView(path));
+    } catch (error) {
+      z.value = error instanceof Error ? error.message : "\u5c55\u5f00\u76ee\u5f55\u5931\u8d25";
+    } finally {
+      A.value = !1;
+    }
+  }
+  function startRename(item = Me.value, surface = "") {
+    if (!item || !$t(item.path)) return;
+    sn();
+    renameState.path = On(item.path);
+    renameState.originalName = item.name || Xn(item.path);
+    renameState.name = renameState.originalName;
+    renameState.isDir = Boolean(item.isDir);
+    renameState.surface = surface || (entryByPath.value.has(item.path) ? "list" : "tree");
+    renameState.saving = !1;
+    renameState.error = "";
+    item.isDir && revealTreePath(item.path);
+  }
+  function setRenameInputRef(element, path) {
+    if (!element || On(path) !== renameState.path || element === activeRenameInput) return;
+    activeRenameInput = element;
+    t(() => {
+      if (renameState.path === On(path) && document.contains(element)) {
+        element.focus();
+        element.select();
+      }
+    });
+  }
+  function updateRenameName(event) {
+    renameState.name = event?.target?.value ?? "";
+  }
+  function cancelRename() {
+    renameState.path = "";
+    renameState.originalName = "";
+    renameState.name = "";
+    renameState.isDir = !1;
+    renameState.surface = "";
+    renameState.saving = !1;
+    renameState.error = "";
+    activeRenameInput = null;
+  }
+  async function commitRename() {
+    if (!renameState.path || renameState.saving) return;
+    const oldPath = renameState.path;
+    const oldName = renameState.originalName;
+    const isDir = renameState.isDir;
+    const newName = String(renameState.name || "").trim();
+    if (newName === oldName) return void cancelRename();
+    if (!newName || newName === "." || newName === ".." || newName.includes("/") || newName.includes("\0")) {
+      renameState.error = "\u540d\u79f0\u4e0d\u5408\u6cd5";
+      z.value = renameState.error;
+      return;
+    }
+    renameState.saving = !0;
+    renameState.error = "";
+    z.value = "";
+    try {
+      const response = await renameRemoteItem(E.connectionId, oldPath, newName);
+      const result = response?.item || response?.rename || response || {};
+      const parent = Wn(oldPath);
+      const fallbackPath = parent === g ? `${g}${newName}` : `${parent}/${newName}`;
+      const newPath = On(result.newPath || result.path || result.targetPath || fallbackPath);
+      const originalCurrentPath = On(T.value);
+      const currentPath = replacePathPrefix(originalCurrentPath, oldPath, newPath);
+      const selectedTreePath = replacePathPrefix(treeSelectedPath.value, oldPath, newPath);
+
+      for (const editor of Z.value) {
+        editor.path = replacePathPrefix(editor.path, oldPath, newPath);
+        editor.name = Xn(editor.path);
+      }
+      const clipboard = An(F.value);
+      if (clipboard?.sourceConnectionId === E.connectionId) {
+        clipboard.items = clipboard.items.map((item) => ({
+          ...item,
+          path: replacePathPrefix(item.path, oldPath, newPath),
+        }));
+        F.value = clipboard;
+        localStorage.setItem(M, JSON.stringify(clipboard));
+      }
+
+      It([{ path: oldPath, isDir }]);
+      parent && Et(parent);
+      cancelRename();
+      await refreshAffectedDirectories([parent]);
+      const shouldApplyRenameSelection = On(T.value) === originalCurrentPath;
+      if (shouldApplyRenameSelection && currentPath && currentPath !== originalCurrentPath) {
+        await Oe(currentPath, { useCache: !1 });
+      }
+      if (shouldApplyRenameSelection) {
+        _.value = new Set([newPath]);
+        revealTreePath(selectedTreePath || (isDir ? newPath : Wn(newPath)) || T.value);
+      }
+    } catch (error) {
+      renameState.saving = !1;
+      renameState.error = error instanceof Error ? error.message : "\u91cd\u547d\u540d\u5931\u8d25";
+      z.value = renameState.error;
+      activeRenameInput = null;
     }
   }
   async function Lt() {
@@ -784,128 +1196,143 @@ function E(E) {
   }
   async function Ot(e) {
     if (!E.connectionId || !e || e.isDir) return;
-    const t = Z.value.find((t) => t.path === e.path);
-    if (t)
+    const existingEditor = Z.value.find((t) => t.path === e.path);
+    if (existingEditor)
       return (
-        "minimized" === t.windowState && (t.windowState = "normal"),
-        void Kt(t.id)
+        "minimized" === existingEditor.windowState && (existingEditor.windowState = "normal"),
+        void Kt(existingEditor.id)
       );
     ot();
-    const n = Wt(e);
-    const o = () => Z.value.some((e) => e.id === n.id);
-    let r = "",
-      a = !1,
-      i = null;
-    const s = () => {
-        if (i) return;
-        i = window.requestAnimationFrame
-          ? window.requestAnimationFrame(() => {
-              (i = null), l();
-            })
-          : window.setTimeout(() => {
-              (i = null), l();
-            }, 16);
-      },
-      l = () => {
-        if (!r || !o()) return;
-        const e = r;
-        (r = ""),
-          n.contentChunks.push(e),
-          (n.appendVersion += 1),
-          (n.loadedContentBytes += new Blob([e]).size),
-          (n.message = "\u6b63\u5728\u7ee7\u7eed\u8bfb\u53d6");
-      },
-      c = () => {
-        i &&
-          (window.cancelAnimationFrame
-            ? window.cancelAnimationFrame(i)
-            : window.clearTimeout(i),
-          (i = null));
-      };
+    const editor = Wt(e);
+    const controller = new AbortController();
+    editorReadControllers.set(editor.id, controller);
+    const editorExists = () => Z.value.some((item) => item.id === editor.id);
+    const isCurrentRead = () => editorExists() && editorReadControllers.get(editor.id) === controller;
+    let pendingPreviewChunks = [];
+    let pendingPreviewCharacters = 0;
+    let previewPublishTimer = null;
+    let lastPreviewPublishAt = performance.now();
+    const cancelPreviewPublishTimer = () => {
+      if (previewPublishTimer === null) return;
+      window.clearTimeout(previewPublishTimer);
+      previewPublishTimer = null;
+    };
+    const discardPendingPreview = () => {
+      pendingPreviewChunks = [];
+      pendingPreviewCharacters = 0;
+    };
+    const publishPreviewBatch = () => {
+      cancelPreviewPublishTimer();
+      if (pendingPreviewCharacters <= 0 || pendingPreviewChunks.length === 0) return;
+      if (!isCurrentRead()) {
+        discardPendingPreview();
+        return;
+      }
+      const text = pendingPreviewChunks.join("");
+      discardPendingPreview();
+      if (!text) return;
+      editor.contentChunks.push(text);
+      editor.appendVersion += 1;
+      lastPreviewPublishAt = performance.now();
+    };
+    const queuePreviewChunk = (text) => {
+      pendingPreviewChunks.push(text);
+      pendingPreviewCharacters += text.length;
+      const elapsedMs = performance.now() - lastPreviewPublishAt;
+      if (elapsedMs >= EDITOR_PREVIEW_PUBLISH_INTERVAL_MS) {
+        publishPreviewBatch();
+        return;
+      }
+      if (previewPublishTimer !== null) return;
+      previewPublishTimer = window.setTimeout(() => {
+        previewPublishTimer = null;
+        publishPreviewBatch();
+      }, Math.max(0, EDITOR_PREVIEW_PUBLISH_INTERVAL_MS - elapsedMs));
+    };
     try {
-      Gt(n, {
+      Gt(editor, {
         stage: "preparing",
         totalBytes: Number(e.size) || 0,
         message: "\u51c6\u5907\u6253\u5f00\u8fdc\u7a0b\u6587\u4ef6",
       });
-      const t =
-          (
-            await m(
-              E.connectionId,
-              e.path,
-              (e) => {
-                o() && Gt(n, e);
-              },
-              {
-                onChunk: (t = {}) => {
-                  if (!o()) return;
-                  t.path && (n.path = String(t.path));
-                  t.fileName && (n.name = String(t.fileName));
-                  if (t.text) {
-                    r += String(t.text);
-                    a || ((a = !0), l());
-                    r.length >= 32768 ? (c(), l()) : s();
-                  }
-                  (n.size =
-                    Number(t.totalBytes) ||
-                    Number(t.loadedBytes) ||
-                    Number(n.size) ||
-                    0),
-                    Gt(n, {
-                      stage: "downloading",
-                      loadedBytes: Number(t.loadedBytes) || 0,
-                      totalBytes: Number(t.totalBytes) || Number(n.size) || 0,
-                      message: "\u6b63\u5728\u8bfb\u53d6\u8fdc\u7a0b\u6587\u4ef6",
-                    });
-                },
-                collectContent: !1,
-              },
-            )
-          ).file || {},
-        u = (l(), String(t.content ?? n.contentChunks.join("") ?? ""));
-      if (!o()) return;
-      (n.path = String(t.path || e.path)),
-        (n.name = String(t.name || e.name || Xn(n.path))),
-        (n.content = u),
-        (n.originalContent = u),
-        (n.size = Number(t.size) || new Blob([u]).size),
-        (n.modTime = String(t.modTime || e.modTime || "")),
-        (n.contentLoading = !1),
-        (n.contentLoaded = !0),
-        (n.message = "\u5df2\u6253\u5f00"),
-        Gt(n, {
-          stage: "done",
-          loadedBytes: n.size,
-          totalBytes: n.size,
-          message: "\u8fdc\u7a0b\u6587\u4ef6\u4e0b\u8f7d\u5b8c\u6210",
-        });
-    } catch (t) {
-      if (!o()) return;
-      (n.error =
-        t instanceof Error
-          ? t.message
-          : "\u6253\u5f00\u6587\u4ef6\u5931\u8d25"),
-        (n.contentLoading = !1),
-        (n.message = "\u6253\u5f00\u5931\u8d25"),
-        Gt(n, {
-          stage: "error",
-          loadedBytes: Number(n.openProgress?.loadedBytes) || 0,
-          totalBytes: Number(n.openProgress?.totalBytes) || Number(e.size) || 0,
-          message: n.error,
-        });
+      const response = await m(
+        editor.connectionId,
+        e.path,
+        (progress) => {
+          if (!isCurrentRead()) return;
+          progress.path && (editor.path = String(progress.path));
+          progress.fileName && (editor.name = String(progress.fileName));
+          editor.loadedContentBytes = Number(progress.loadedBytes) || editor.loadedContentBytes || 0;
+          editor.size = Number(progress.totalBytes) || Number(editor.size) || 0;
+          Gt(editor, progress);
+        },
+        {
+          signal: controller.signal,
+          onChunk: (chunk) => {
+            if (!isCurrentRead()) return;
+            const text = String(chunk?.text || "");
+            if (!text) return;
+            queuePreviewChunk(text);
+          },
+        },
+      );
+      const remoteFile = response.file || {};
+      const content = String(remoteFile.content ?? "");
+      if (!isCurrentRead()) return;
+      publishPreviewBatch();
+      editor.path = String(remoteFile.path || e.path);
+      editor.name = String(remoteFile.name || e.name || Xn(editor.path));
+      editor.content = content;
+      editor.originalContent = content;
+      editor.size = Number(remoteFile.size) || new Blob([content]).size;
+      editor.modTime = String(remoteFile.modTime || e.modTime || "");
+      editor.contentLoading = false;
+      editor.contentLoaded = true;
+      editor.message = "\u5df2\u6253\u5f00";
+      Gt(editor, {
+        stage: "done",
+        loadedBytes: editor.size,
+        totalBytes: editor.size,
+        message: "\u8fdc\u7a0b\u6587\u4ef6\u4e0b\u8f7d\u5b8c\u6210",
+      });
+      await t();
+      if (isCurrentRead()) editor.contentChunks = markRawChunks([]);
+    } catch (error) {
+      cancelPreviewPublishTimer();
+      discardPendingPreview();
+      if (controller.signal.aborted || "AbortError" === error?.name || !isCurrentRead()) {
+        return;
+      }
+      editor.error =
+        error instanceof Error
+          ? error.message
+          : "\u6253\u5f00\u6587\u4ef6\u5931\u8d25";
+      editor.contentChunks = markRawChunks([]);
+      editor.contentLoading = false;
+      editor.message = "\u6253\u5f00\u5931\u8d25";
+      Gt(editor, {
+        stage: "error",
+        loadedBytes: Number(editor.openProgress?.loadedBytes) || 0,
+        totalBytes: Number(editor.openProgress?.totalBytes) || Number(e.size) || 0,
+        message: editor.error,
+      });
     } finally {
-      c(), o() && (l(), (n.loading = !1));
+      cancelPreviewPublishTimer();
+      discardPendingPreview();
+      editorReadControllers.get(editor.id) === controller && editorReadControllers.delete(editor.id);
+      editorExists() && (editor.loading = false);
     }
   }
   function Wt(e) {
     const t = Ht(),
-      n = {
+      n = r({
         id: crypto.randomUUID(),
+        connectionId: E.connectionId,
         windowState: "normal",
         loading: !1,
         contentLoading: !0,
         contentLoaded: !1,
-        contentChunks: [],
+        contentChunks: markRawChunks([]),
         appendVersion: 0,
         loadedContentBytes: 0,
         saving: !1,
@@ -935,8 +1362,10 @@ function E(E) {
         height: t.height,
         zIndex: Ut(),
         closePrompt: { visible: !1, afterClose: null },
-      };
-    return Z.value.push(n), (J.value = n.id), n;
+      });
+    Z.value.push(n);
+    J.value = n.id;
+    return n;
   }
   function Ht() {
     const e = window.innerWidth || 1200,
@@ -1034,7 +1463,7 @@ function E(E) {
   }
   async function Qt(e) {
     if (
-      !E.connectionId ||
+      !(e?.connectionId || E.connectionId) ||
       !e ||
       !e.path ||
       e.contentLoading ||
@@ -1045,7 +1474,7 @@ function E(E) {
     (e.saving = !0), (e.error = ""), (e.message = "");
     const t = e.content;
     try {
-      const n = (await h(E.connectionId, e.path, t)).file || {};
+      const n = (await h(e.connectionId || E.connectionId, e.path, t)).file || {};
       return (
         (e.path = String(n.path || e.path)),
         (e.name = String(n.name || e.name || Xn(e.path))),
@@ -1068,11 +1497,22 @@ function E(E) {
   }
   function en(e) {
     if (!e) return;
+    cancelEditorRead(e);
     const t = Z.value.findIndex((t) => t.id === e.id);
     if (-1 !== t && (Z.value.splice(t, 1), J.value === e.id)) {
       const e = [...Z.value].sort((e, t) => t.zIndex - e.zIndex)[0];
       J.value = e?.id || "";
     }
+  }
+  function cancelEditorRead(editor) {
+    const controller = editorReadControllers.get(editor?.id);
+    if (!controller) return;
+    editorReadControllers.delete(editor.id);
+    controller.abort();
+  }
+  function cancelAllEditorReads() {
+    for (const controller of editorReadControllers.values()) controller.abort();
+    editorReadControllers.clear();
   }
   async function tn(e) {
     "function" == typeof e && (await e());
@@ -1088,15 +1528,40 @@ function E(E) {
     _.value = new Set(Array.from(_.value).filter((t) => e.has(t)));
   }
   function an(e, t = {}) {
-    const n = y(e, { width: 220, height: 470 });
+    const clientX = Number(e?.clientX) || 8;
+    const clientY = Number(e?.clientY) || 8;
+    const revision = ++contextMenuPositionRevision;
+    const n = y({ clientX, clientY }, { width: 220, height: 320 });
+    const entry = t.entry || null;
+    const targetKind = t.targetKind || (entry?.isDir ? "directory" : entry ? "file" : "directory");
     (de.visible = !0),
-      (de.entry = t.entry || null),
-      (de.targetPath = t.targetPath || je()),
-      (de.targetKind = t.targetKind || "blank"),
+      (de.entry = entry),
+      (de.targetPath = On(t.targetPath || entry?.path || je())),
+      (de.targetKind = targetKind),
+      (de.source = t.source || "blank"),
       (de.x = n.x),
       (de.y = n.y);
+    void positionContextMenuAfterRender(revision, clientX, clientY);
+  }
+  async function positionContextMenuAfterRender(revision, clientX, clientY) {
+    await t();
+    if (!de.visible || revision !== contextMenuPositionRevision) return;
+    const element = contextMenuElement.value;
+    if (!element) return;
+    const bounds = element.getBoundingClientRect();
+    const position = y(
+      { clientX, clientY },
+      {
+        width: Math.ceil(bounds.width),
+        height: Math.ceil(bounds.height),
+      },
+    );
+    if (!de.visible || revision !== contextMenuPositionRevision) return;
+    de.x = position.x;
+    de.y = position.y;
   }
   function sn() {
+    contextMenuPositionRevision += 1;
     de.visible = !1;
   }
   function ln(e) {
@@ -1147,15 +1612,15 @@ function E(E) {
         .map((e) => `- ${e.path}`)
         .join("\n"),
       n = e.length > 6 ? `\n... \u8fd8\u6709 ${e.length - 6} \u9879` : "";
-    return `\u786e\u8ba4\u5f3a\u5236\u5220\u9664\u9009\u4e2d\u7684 ${e.length} \u9879\uff1f\n\n${t}${n}\n\n\u6b64\u64cd\u4f5c\u4e0d\u53ef\u64a4\u9500\u3002`;
+    return `\u786e\u8ba4\u5f3a\u5236\u5220\u9664\u4ee5\u4e0b ${e.length} \u9879\uff1f\n\n${t}${n}\n\n\u6b64\u64cd\u4f5c\u4e0d\u53ef\u64a4\u9500\u3002`;
   }
-  function hn(e) {
-    if (!pe.value) return;
+  function hn(e, items = he.value) {
+    if (!items.length) return;
     const t = $n(e),
       n = {
         sourceConnectionId: E.connectionId,
         action: t,
-        items: he.value.map((e) => ({ path: e.path, isDir: e.isDir })),
+        items: items.map((e) => ({ path: e.path, isDir: Boolean(e.isDir) })),
         createdAt: Date.now(),
       };
     localStorage.setItem(M, JSON.stringify(n)), (F.value = n);
@@ -1164,24 +1629,93 @@ function E(E) {
     if (!ve.value) return;
     const t = An(F.value);
     if (!t) return (F.value = null), void localStorage.removeItem(M);
+    const targetPath = On(e || je());
+    const sameConnectionMove = "move" === t.action && t.sourceConnectionId === E.connectionId;
+    const affectedDirectories = [targetPath];
+    if (sameConnectionMove) {
+      for (const item of t.items) affectedDirectories.push(Wn(item.path));
+    }
     (A.value = !0), (z.value = "");
     try {
-      if (
-        (await p({
-          sourceConnectionId: t.sourceConnectionId,
-          targetConnectionId: E.connectionId,
-          targetPath: e || je(),
-          action: t.action,
-          items: t.items,
-        }),
-        Et(e || je()),
-        "move" === t.action && t.sourceConnectionId === E.connectionId)
-      )
-        for (const e of t.items) Et(Wn(e.path));
+      await p({
+        sourceConnectionId: t.sourceConnectionId,
+        targetConnectionId: E.connectionId,
+        targetPath,
+        action: t.action,
+        items: t.items,
+      });
+      const currentPathAfterTransfer = On(T.value);
+      const navigationRevisionAfterTransfer = navigationRevision;
+      let relocatedCurrentPath = currentPathAfterTransfer;
+      if (sameConnectionMove) {
+        for (const item of t.items) {
+          const sourcePath = On(item.path);
+          if (!item.isDir || !sourcePath || !Un(currentPathAfterTransfer, sourcePath)) continue;
+          const destinationRoot = targetPath === g
+            ? `${g}${Xn(sourcePath)}`
+            : `${targetPath}/${Xn(sourcePath)}`;
+          relocatedCurrentPath = replacePathPrefix(currentPathAfterTransfer, sourcePath, destinationRoot);
+          break;
+        }
+      }
+      Et(targetPath);
+      if (sameConnectionMove) {
+        It(t.items);
+        for (const item of t.items) Et(Wn(item.path));
+      }
       "move" === t.action && (localStorage.removeItem(M), (F.value = null)),
-        await Oe(T.value || Xe(E.workMode), { useCache: !1 });
+        await refreshAffectedDirectories(affectedDirectories);
+      if (
+        relocatedCurrentPath &&
+        relocatedCurrentPath !== currentPathAfterTransfer &&
+        On(T.value) === currentPathAfterTransfer &&
+        navigationRevision === navigationRevisionAfterTransfer
+      ) {
+        await Oe(relocatedCurrentPath, { useCache: !1 });
+      }
     } catch (e) {
-      z.value = e instanceof Error ? e.message : "\u7c98\u8d34\u5931\u8d25";
+      const errorMessage = e instanceof Error ? e.message : "\u7c98\u8d34\u5931\u8d25";
+      const currentPathAtFailure = On(T.value);
+      const navigationRevisionAtFailure = navigationRevision;
+      let relocatedFailurePath = currentPathAtFailure;
+      if (sameConnectionMove) {
+        for (const item of t.items) {
+          const sourcePath = On(item.path);
+          if (!item.isDir || !sourcePath || !Un(currentPathAtFailure, sourcePath)) continue;
+          const destinationRoot = targetPath === g
+            ? `${g}${Xn(sourcePath)}`
+            : `${targetPath}/${Xn(sourcePath)}`;
+          relocatedFailurePath = replacePathPrefix(currentPathAtFailure, sourcePath, destinationRoot);
+          break;
+        }
+        It(t.items);
+      }
+      for (const path of affectedDirectories) Et(path);
+      await refreshAffectedDirectories(affectedDirectories);
+      if (
+        sameConnectionMove &&
+        relocatedFailurePath !== currentPathAtFailure &&
+        On(T.value) === currentPathAtFailure &&
+        navigationRevision === navigationRevisionAtFailure
+      ) {
+        try {
+          const currentListing = await We(currentPathAtFailure, { rememberTree: !0 });
+          if (
+            On(T.value) === currentPathAtFailure &&
+            navigationRevision === navigationRevisionAtFailure
+          ) {
+            Ye(currentListing.resolvedPath, currentListing.entries, currentListing.requestedPath);
+          }
+        } catch {
+          if (
+            On(T.value) === currentPathAtFailure &&
+            navigationRevision === navigationRevisionAtFailure
+          ) {
+            await Oe(relocatedFailurePath, { useCache: !1 });
+          }
+        }
+      }
+      z.value = errorMessage;
     } finally {
       A.value = !1;
     }
@@ -1406,6 +1940,14 @@ function E(E) {
   return (
     o(() => {
       Fn(),
+        (viewportResizeObserver = new ResizeObserver((entries) => {
+          for (const entry of entries) {
+            entry.target === fileListViewport.value && syncFileViewport(entry.target);
+            entry.target === pathTreeViewport.value && syncTreeViewport(entry.target);
+          }
+        })),
+        fileListViewport.value && viewportResizeObserver.observe(fileListViewport.value),
+        pathTreeViewport.value && viewportResizeObserver.observe(pathTreeViewport.value),
         window.addEventListener("storage", Rn),
         window.addEventListener("keydown", zn),
         window.addEventListener("pointerdown", ln, !0);
@@ -1418,6 +1960,11 @@ function E(E) {
         ct(),
         Le(),
         ot(),
+        cancelAllEditorReads(),
+        directoryLoadController?.abort(),
+        (directoryLoadController = null),
+        viewportResizeObserver?.disconnect(),
+        (viewportResizeObserver = null),
         rt(),
         _n(),
         Jt();
@@ -1474,6 +2021,15 @@ function E(E) {
       editors: Z,
       activeEditorId: J,
       pathMeta: Q,
+      treeSelectedPath,
+      fileListViewport,
+      pathTreeViewport,
+      contextMenuElement,
+      fileScrollTop,
+      treeScrollTop,
+      fileViewportHeight,
+      treeViewportHeight,
+      renameState,
       resizeState: ee,
       editorDragState: te,
       uploadCloseTimer: ne,
@@ -1495,8 +2051,9 @@ function E(E) {
       contextCanOpenDirectory: ge,
       contextPath: we,
       contextTargetDir: Pe,
-      contextDeleteItem: Me,
+      contextTargetItem: Me,
       canDeleteFromMenu: be,
+      contextCanMutate,
       gridTemplateColumns: De,
       activeEditor: xe,
       preloadConcurrency: Se,
@@ -1517,12 +2074,21 @@ function E(E) {
           : ((j.key = e), (j.direction = "asc")),
           _e(e);
       },
-      sortArrow: function (e) {
-        return j.key !== e ? "" : "asc" === j.direction ? "\u2191" : "\u2193";
-      },
       pulseSortColumn: _e,
       clearSortPulseTimer: Le,
       treeNodes: Fe,
+      visibleTreeNodes,
+      visibleEntries,
+      fileVirtualHeight,
+      treeVirtualHeight,
+      treeContentWidth,
+      fileContentWidth,
+      fileRowHeight: FILE_ROW_HEIGHT,
+      treeRowHeight: TREE_ROW_HEIGHT,
+      onFileListScroll: (event) => syncFileViewport(event.currentTarget),
+      onTreeScroll: (event) => syncTreeViewport(event.currentTarget),
+      revealTreePath,
+      scrollTreePathIntoView,
       refresh: Oe,
       loadDirectoryFromRemote: We,
       refreshOpenDirectories: He,
@@ -1535,6 +2101,8 @@ function E(E) {
       normalizeWorkMode: qe,
       initialPathMeta: Ge,
       getCachedDirectory: Ze,
+      rawCachedDirectoryEntries,
+      hasCachedDirectory,
       setCachedDirectory: Je,
       directoryCacheKey: Qe,
       cloneEntries: et,
@@ -1572,13 +2140,9 @@ function E(E) {
       trimPathHistoryStats: pt,
       scrollPathHistoryToBottom: vt,
       openHistoryPath: function (e) {
-        (V.value = !1), on(), Oe(e);
+        (V.value = !1), on(), yt(e);
       },
-      togglePathNode: function (e) {
-        const t = new Map(Q.value),
-          n = t.get(e) || { opened: !1, collapsed: !1 };
-        t.set(e, { ...n, collapsed: !n.collapsed }), (Q.value = t);
-      },
+      activateTreeNode,
       openDir: yt,
       openEntry: function (e) {
         e.isDir ? yt(e.path) : Ft(b, e);
@@ -1588,7 +2152,7 @@ function E(E) {
       },
       commitPathDraft: function (e) {
         const t = B.value.trim();
-        t ? ((V.value = !1), on(), Oe(t)) : (B.value = T.value);
+        t ? ((V.value = !1), on(), yt(t)) : (B.value = T.value);
       },
       completePathDraft: async function () {
         if (!E.connectionId) return;
@@ -1651,14 +2215,26 @@ function E(E) {
       downloadSelectionFromMenu: async function () {
         sn(), await Lt();
       },
-      downloadContextEntry: async function () {
-        const e = de.entry;
-        sn(), e && !e.isDir && (await _t(e.path, e.name));
-      },
+      downloadContextEntry: downloadContextItem,
+      downloadContextItem,
       openContextDirectory: function () {
-        const e = de.entry?.isDir ? de.entry.path : de.targetPath;
+        const e = we.value;
         sn(), e && yt(e);
       },
+      expandContextDirectory: async function () {
+        const e = we.value;
+        sn(), e && (await expandDirectory(e));
+      },
+      refreshTargetDirectory,
+      expandDirectory,
+      startRenameFromMenu: function () {
+        startRename(Me.value, de.source === "entry" ? "list" : "tree");
+      },
+      startRename,
+      setRenameInputRef,
+      updateRenameName,
+      commitRename,
+      cancelRename,
       runContextFileOpenAction: async function (e) {
         const t = de.entry;
         sn(), t && !t.isDir && (await Ft(e, t));
@@ -1805,6 +2381,7 @@ function E(E) {
       },
       cancelEditorClosePrompt: nn,
       selectEntry: function (e, t, n) {
+        revealTreePath(Wn(e.path) || T.value);
         if (n.shiftKey && L.value >= 0) {
           const e = Math.min(L.value, t),
             n = Math.max(L.value, t),
@@ -1814,11 +2391,10 @@ function E(E) {
         } else {
           if (n.ctrlKey || n.metaKey) {
             const n = new Set(_.value);
-            return (
-              n.has(e.path) ? n.delete(e.path) : n.add(e.path),
+            n.has(e.path) ? n.delete(e.path) : n.add(e.path),
               (_.value = n),
-              void (L.value = t)
-            );
+              (L.value = t);
+            return;
           }
           (_.value = new Set([e.path])), (L.value = t);
         }
@@ -1829,44 +2405,49 @@ function E(E) {
       clearSelection: on,
       keepExistingSelection: rn,
       onPaneClick: function (e) {
-        e.target.closest(".file-row") || on(), sn();
+        e.target.closest(".file-row") || (on(), revealTreePath(T.value)), sn();
       },
       onShellClick: function () {
         sn(), Cn(), (V.value = !1);
       },
       openEntryContextMenu: function (e, t, n) {
-        _.value.has(t.path) || ((_.value = new Set([t.path])), (L.value = n)),
+        (_.value = new Set([t.path])),
+          (L.value = n),
+          revealTreePath(Wn(t.path) || T.value),
           an(e, {
             entry: t,
-            targetPath: t.isDir ? t.path : je(),
+            targetPath: t.path,
             targetKind: t.isDir ? "directory" : "file",
+            source: "entry",
           });
       },
       openPathContextMenu: function (e, t) {
-        an(e, { targetPath: t, targetKind: "directory" });
+        const n = treeContextTarget(t, treeSelectedPath.value);
+        an(e, { targetPath: n, targetKind: "directory", source: "tree" });
       },
       openBlankContextMenu: function (e) {
-        an(e, { targetPath: je(), targetKind: "blank" });
+        on(), revealTreePath(je()), an(e, { targetPath: je(), targetKind: "directory", source: "blank" });
       },
       openContextMenu: an,
       hideContextMenu: sn,
       onGlobalPointerDown: ln,
       refreshFromMenu: async function () {
         const e = de.targetPath || T.value || Xe(E.workMode);
-        sn(), await He(e);
+        sn(), await refreshTargetDirectory(e);
       },
       copySelection: cn,
       cutSelection: un,
       copySelectionFromMenu: function () {
-        sn(), cn();
+        const e = Me.value;
+        sn(), e && hn("copy", [e]);
       },
       cutSelectionFromMenu: function () {
-        sn(), un();
+        const e = Me.value;
+        sn(), e && $t(e.path) && hn("move", [e]);
       },
       deleteFromMenu: async function () {
-        if ((sn(), pe.value)) return void (await dn());
         const e = Me.value;
-        e && (await fn([e]));
+        sn(), e && $t(e.path) && (await fn([e]));
       },
       deleteSelection: dn,
       deleteItems: fn,
@@ -1877,9 +2458,15 @@ function E(E) {
         const e = Pe.value;
         sn(), await pn(e);
       },
-      copyPathFromMenu: function () {
+      copyPathFromMenu: async function () {
         const e = we.value;
-        sn(), e && navigator.clipboard?.writeText(e).catch(() => {});
+        sn();
+        if (!e) return;
+        try {
+          await navigator.clipboard.writeText(e);
+        } catch {
+          z.value = "\u590d\u5236\u8def\u5f84\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u7cfb\u7edf\u526a\u8d34\u677f\u6743\u9650";
+        }
       },
       onRemoteDragStart: function (e, t, n) {
         _.value.has(t.path) || ((_.value = new Set([t.path])), (L.value = n));

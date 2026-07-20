@@ -103,6 +103,15 @@ type TransferBatchResult struct {
 	TotalSize   int64            `json:"totalSize"`
 }
 
+type RenameResult struct {
+	OK      bool   `json:"ok"`
+	Changed bool   `json:"changed"`
+	OldPath string `json:"oldPath"`
+	NewPath string `json:"newPath"`
+	Name    string `json:"name"`
+	IsDir   bool   `json:"isDir"`
+}
+
 type DeleteResult struct {
 	RemotePath string `json:"remotePath"`
 	IsDir      bool   `json:"isDir"`

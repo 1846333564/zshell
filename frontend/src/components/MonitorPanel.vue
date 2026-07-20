@@ -24,7 +24,7 @@
     <section class="monitor-section server-section">
       <div class="section-row">
         <span>服务器</span>
-        <span>{{ loading ? '更新中' : serverClockText }}</span>
+        <span>{{ serverClockStatusText }}</span>
       </div>
       <div class="server-metric-grid">
         <div v-for="item in serverMetrics" :key="item.label" class="server-metric">
@@ -123,10 +123,12 @@ const props = defineProps({
 
 const snapshot = ref(null);
 const loading = ref(false);
+const requestLatencyMs = ref(null);
 const errorMessage = ref('');
 const processSort = ref('memory');
 const networkHistory = ref([]);
 let timer = null;
+let refreshRevision = 0;
 
 const processes = computed(() => snapshot.value?.processes || []);
 const networks = computed(() => snapshot.value?.networks || []);
@@ -145,6 +147,12 @@ const networkMidpoint = computed(() => networkPeak.value / 2);
 const networkRxPoints = computed(() => networkChartPoints('rxBps'));
 const networkTxPoints = computed(() => networkChartPoints('txBps'));
 const serverClockText = computed(() => formatServerTime(system.value.serverTime, system.value.timeZone));
+const serverClockStatusText = computed(() => {
+  if (requestLatencyMs.value === null) {
+    return serverClockText.value;
+  }
+  return `${serverClockText.value} · ${requestLatencyMs.value} ms`;
+});
 const serverMetrics = computed(() => {
   const loads = snapshot.value?.loads || {};
   return [
@@ -164,7 +172,10 @@ const serverMetrics = computed(() => {
 watch(
   () => props.session?.connectionId,
   () => {
+    refreshRevision += 1;
+    loading.value = false;
     snapshot.value = null;
+    requestLatencyMs.value = null;
     networkHistory.value = [];
     errorMessage.value = '';
     restartTimer();
@@ -173,6 +184,7 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  refreshRevision += 1;
   stopTimer();
 });
 
@@ -193,20 +205,32 @@ function stopTimer() {
 }
 
 async function refresh() {
-  if (!props.session?.connectionId || loading.value) {
+  const connectionId = props.session?.connectionId;
+  if (!connectionId || loading.value) {
     return;
   }
 
+  const revision = refreshRevision;
   loading.value = true;
   errorMessage.value = '';
+  const startedAt = Date.now();
   try {
-    const result = await getMonitorSnapshot(props.session.connectionId, processSort.value);
+    const result = await getMonitorSnapshot(connectionId, processSort.value);
+    if (revision !== refreshRevision || props.session?.connectionId !== connectionId) {
+      return;
+    }
     snapshot.value = result.snapshot;
+    requestLatencyMs.value = Math.max(0, Date.now() - startedAt);
     rememberNetworkSample(result.snapshot);
   } catch (error) {
+    if (revision !== refreshRevision || props.session?.connectionId !== connectionId) {
+      return;
+    }
     errorMessage.value = error instanceof Error ? error.message : '监控刷新失败';
   } finally {
-    loading.value = false;
+    if (revision === refreshRevision && props.session?.connectionId === connectionId) {
+      loading.value = false;
+    }
   }
 }
 

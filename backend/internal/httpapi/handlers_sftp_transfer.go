@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -50,7 +51,11 @@ func (s *Server) handleSFTPTransfer(w http.ResponseWriter, r *http.Request) {
 
 	result, err := sftpsvc.TransferItems(sourceConn, targetConn, req.TargetPath, req.Items, action, s.sshTimeout)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		status := http.StatusBadGateway
+		if errors.Is(err, sftpsvc.ErrTargetExists) {
+			status = http.StatusConflict
+		}
+		writeError(w, status, err.Error())
 		return
 	}
 

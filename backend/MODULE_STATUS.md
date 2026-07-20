@@ -18,7 +18,7 @@ Go 后端负责 Wails 应用启动、本地 API 服务、动态端口绑定和 r
 
 后端会先初始化日志系统，再在动态高端口启动本地 API/WebSocket 服务，并通过 Wails 加载前端资源。本地 API 使用请求头读取超时和空闲超时，但不为长时间 SFTP 上传、下载、更新等流式响应设置 30 秒写超时。日志写入 `%AppData%\wiShell\log`，按小时轮转并在启动时清理 24 小时以前的日志。Wails 使用无边框 Windows 窗口，在创建 WebView2 前读取加密 UI 偏好，默认开启 GPU 硬件加速，让 Vue、xterm 和 Monaco 通过合成器流畅绘制；用户可关闭该设置并在下次启动生效。后端同时保留 WebView 右键事件，使 Vue 可以渲染自定义文件管理器菜单并屏蔽非文件区菜单。保存的连接配置在 API 服务启动时加载进内存，供终端、SFTP 和监控流程使用；应用改名后会从旧 `%AppData%\zShell` / `%AppData%\zshell` 配置文件迁移保存连接，避免升级后连接列表变空。
 
-release 构建脚本会检查 npm、Go 和 Wails 原生命令退出码，读取 `VERSION`，通过 ldflags 注入运行时版本号，并把最终 exe 复制到项目 `release` 文件夹，文件名为 `wiShell.<版本号>.exe`。脚本只覆盖当前版本对应的 exe，不自动删除旧版本本地 release 包。
+release 构建脚本会检查 npm、Go 和 Wails 原生命令退出码，读取 `VERSION`，通过 ldflags 注入运行时版本号，并把最终 exe 复制到项目 `release` 文件夹，文件名为 `wiShell.<版本号>.exe`。脚本保留默认执行 `go test ./...` 的能力；当前 Codex 与 GitHub Release 流程按用户策略传入 `-SkipGoTests`，避免生成临时 `.test.exe`，并只对最终 exe 执行启动与 `/api/health` 冒烟。脚本只覆盖当前版本对应的 exe，不自动删除旧版本本地 release 包。
 
 ## 已知工作
 

@@ -62,7 +62,59 @@ jobs:
 
       - name: 构建 release 可执行文件
         shell: pwsh
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\build-windows.ps1
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\build-windows.ps1 -SkipGoTests
+
+      - name: 冒烟验证 release 可执行文件
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = (Resolve-Path "release\wiShell.$env:WISHELL_VERSION.exe").Path
+          $launchedProcess = $null
+          $healthy = $false
+          $deadline = (Get-Date).AddSeconds(60)
+          try {
+            $launchedProcess = Start-Process -FilePath $exe -PassThru -WindowStyle Hidden
+            while ((Get-Date) -lt $deadline) {
+              $launchedProcess.Refresh()
+              if ($launchedProcess.HasExited) {
+                throw "wiShell exited before becoming healthy (exit code $($launchedProcess.ExitCode))."
+              }
+              $ports = Get-NetTCPConnection -State Listen -OwningProcess $launchedProcess.Id -ErrorAction SilentlyContinue |
+                Select-Object -ExpandProperty LocalPort -Unique
+              foreach ($port in $ports) {
+                try {
+                  $health = Invoke-RestMethod -Uri "http://127.0.0.1:$port/api/health" -TimeoutSec 2
+                  if ($health.status -eq 'ok') {
+                    $healthy = $true
+                    Write-Host "wiShell health check passed on port $port."
+                    break
+                  }
+                } catch {
+                  continue
+                }
+              }
+              if ($healthy) {
+                break
+              }
+              Start-Sleep -Milliseconds 250
+            }
+            if (-not $healthy) {
+              throw 'wiShell did not expose a healthy /api/health endpoint within 60 seconds.'
+            }
+            Start-Sleep -Seconds 2
+            $launchedProcess.Refresh()
+            if ($launchedProcess.HasExited) {
+              throw "wiShell exited immediately after the health check (exit code $($launchedProcess.ExitCode))."
+            }
+          } finally {
+            if ($null -ne $launchedProcess) {
+              $runningProcess = Get-Process -Id $launchedProcess.Id -ErrorAction SilentlyContinue
+              if ($null -ne $runningProcess) {
+                Stop-Process -Id $launchedProcess.Id -Force
+                Wait-Process -Id $launchedProcess.Id -Timeout 10 -ErrorAction SilentlyContinue
+              }
+            }
+          }
 
       - name: 生成 SHA256 校验文件
         shell: pwsh

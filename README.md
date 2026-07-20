@@ -4,10 +4,10 @@ wiShell 是 Windows 桌面 SSH/SFTP 工具，使用 Go、Wails/WebView2、Vue、
 
 ## 当前版本
 
-- 当前本地版本：`0.3.18`
+- 当前本地版本：`0.4.1`
 - 版本来源：根目录 `VERSION`
-- 本地打包产物：`release/wiShell.0.3.18.exe`
-- 本版本会通过 `v0.3.18` tag 发布 GitHub Release。
+- 本地打包产物：`release/wiShell.0.4.1.exe`
+- 本版本会通过 `v0.4.1` tag 发布 GitHub Release，标题为“巨幅优化文件编辑器性能”。
 
 ## 文件拆分规则
 
@@ -23,7 +23,9 @@ wiShell 是 Windows 桌面 SSH/SFTP 工具，使用 Go、Wails/WebView2、Vue、
 - 后端 `httpapi`、`sftpsvc`、`updatesvc` 已按职责拆成多个同包文件，保留原函数签名和路由行为。
 - 前端 `App.vue` 的连接、更新和 UI 偏好逻辑已拆到 `src/composables/app`。
 - 应用更新弹窗支持在下载和校验阶段停止更新，停止后会取消流式请求并阻止进入替换重启流程。
-- 文件管理器降低后台目录预加载压力，文本编辑会先完成远程读取再初始化 Monaco，并修复打开进度层遗漏绑定导致目录树和编辑窗口渲染中断的问题。
+- 文件管理器降低后台目录预加载压力，文本编辑会立即创建窗口并初始化 Monaco，在远程下载期间直接显示已经到达的内容，并修复打开进度层遗漏绑定导致目录树和编辑窗口渲染中断的问题。
+- 文件管理器拆分目录/文件右键菜单，支持精确右键目标、空白父目录菜单、原位重命名、整目录复制/剪切/下载、条件粘贴与上传；左侧目录树每个目录独占一行，以 90 度空心折线图标表示状态并由整行点击展开/折叠，右侧千级列表和左树使用固定行高虚拟滚动。
+- 在线编辑通过原始 UTF-8 响应和 XHR 原生进度事件下载内容，增量文本先进入非响应式缓冲区，最多每 1 秒合并后以新文本节点追加到独立只读预览，完整读取后再切换到 Monaco 并解锁编辑；编辑窗口状态从创建起保持 Vue 响应式，进度与内容更新不依赖鼠标点击。关闭编辑窗口会同时取消浏览器请求和服务器 SFTP 读取，避免后台继续无用下载。
 - UI 主题系统支持 wiShell 默认、Dracula、Nord、Tokyo Night、Catppuccin Mocha、Gruvbox Dark、One Dark、Solarized Dark 和自定义颜色。
 - WebView2 默认开启 GPU 硬件加速，顶部 `UI管理` 可持久化切换并在重启后生效。
 - 前端 `FileManager.vue` 保留模板，setup 逻辑拆到 `src/components/useFileManager.js`。
@@ -35,9 +37,8 @@ wiShell 是 Windows 桌面 SSH/SFTP 工具，使用 Go、Wails/WebView2、Vue、
 cd frontend
 npm run build
 
-cd ..\backend
-go test ./...
-
 cd ..
-powershell -NoProfile -ExecutionPolicy Bypass -File .\build-windows.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build-windows.ps1 -SkipGoTests
 ```
+
+构建后只启动最终 `release\wiShell.<版本号>.exe` 并确认本地 `/api/health` 返回 `ok`；不进行图像验收，也不运行会生成 `.test.exe` 的 Go 测试。

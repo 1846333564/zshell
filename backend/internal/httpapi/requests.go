@@ -48,6 +48,12 @@ type sftpTransferRequest struct {
 	Items              []sftpsvc.TransferItem `json:"items"`
 }
 
+type sftpRenameRequest struct {
+	ConnectionID string `json:"connectionId"`
+	Path         string `json:"path"`
+	NewName      string `json:"newName"`
+}
+
 type sftpDeleteRequest struct {
 	ConnectionID string                 `json:"connectionId"`
 	Items        []sftpsvc.TransferItem `json:"items"`

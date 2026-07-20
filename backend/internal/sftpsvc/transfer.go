@@ -2,6 +2,7 @@ package sftpsvc
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"strings"
@@ -87,13 +88,17 @@ func TransferItems(sourceConn model.Connection, targetConn model.Connection, tar
 				return TransferBatchResult{}, err
 			}
 		}
-		if action == "move" && sameConnection && targetPath == sourcePath {
-			if stat.IsDir() {
-				result.Directories = append(result.Directories, targetPath)
-			} else {
-				result.Files = append(result.Files, TransferResult{RemotePath: targetPath, Size: stat.Size()})
+		if action == "move" {
+			noOp, err := ensureMoveTargetAvailable(sourcePath, targetPath, sameConnection, func(remotePath string) (bool, error) {
+				return remotePathExists(targetSFTP, remotePath)
+			})
+			if err != nil {
+				return TransferBatchResult{}, err
 			}
-			continue
+			if noOp {
+				appendTransferResult(&result, targetPath, stat)
+				continue
+			}
 		}
 
 		if stat.IsDir() {
@@ -152,9 +157,17 @@ func transferItemsOnSameConnection(sshClient *ssh.Client, sftpClient *sftp.Clien
 				return TransferBatchResult{}, err
 			}
 		}
-		if action == "move" && targetPath == sourcePath {
-			appendTransferResult(&result, targetPath, stat)
-			continue
+		if action == "move" {
+			noOp, err := ensureMoveTargetAvailable(sourcePath, targetPath, true, func(remotePath string) (bool, error) {
+				return remotePathExists(sftpClient, remotePath)
+			})
+			if err != nil {
+				return TransferBatchResult{}, err
+			}
+			if noOp {
+				appendTransferResult(&result, targetPath, stat)
+				continue
+			}
 		}
 
 		command := sameConnectionTransferCommand(action, sourcePath, targetPath)
@@ -207,13 +220,30 @@ func availableCopyTargetPath(client *sftp.Client, sourcePath string, targetPath 
 }
 
 func remotePathExists(client *sftp.Client, remotePath string) (bool, error) {
-	if _, err := client.Stat(remotePath); err != nil {
+	if _, err := client.Lstat(remotePath); err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
 		}
 		return false, fmt.Errorf("stat target path %s: %w", remotePath, err)
 	}
 	return true, nil
+}
+
+type remotePathExistsFunc func(string) (bool, error)
+
+func ensureMoveTargetAvailable(sourcePath string, targetPath string, sameConnection bool, exists remotePathExistsFunc) (bool, error) {
+	if sameConnection && targetPath == sourcePath {
+		return true, nil
+	}
+
+	targetExists, err := exists(targetPath)
+	if err != nil {
+		return false, err
+	}
+	if targetExists {
+		return false, fmt.Errorf("%w: %s", ErrTargetExists, targetPath)
+	}
+	return false, nil
 }
 
 func copyPathCandidate(originalPath string, index int) string {
@@ -239,7 +269,7 @@ func sameConnectionTransferCommand(action string, sourcePath string, targetPath 
 	if action == "copy" {
 		return fmt.Sprintf("cp -a --reflink=auto -- %s %s 2>/dev/null || cp -a -- %s %s", sourceArg, targetArg, sourceArg, targetArg)
 	}
-	return fmt.Sprintf("mv -f -- %s %s", sourceArg, targetArg)
+	return fmt.Sprintf("mv -nT -- %s %s && if [ -e %s ] || [ -L %s ]; then echo 'move refused because target exists' >&2; exit 1; fi", sourceArg, targetArg, sourceArg, sourceArg)
 }
 
 func copyRemoteFile(sourceClient *sftp.Client, targetClient *sftp.Client, sourcePath string, targetPath string) (int64, error) {
@@ -255,7 +285,7 @@ func copyRemoteFile(sourceClient *sftp.Client, targetClient *sftp.Client, source
 	}
 	defer source.Close()
 
-	written, err := uploadToPath(targetClient, targetPath, source)
+	written, err := uploadToNewPath(targetClient, targetPath, source)
 	if err != nil {
 		return 0, err
 	}
@@ -264,7 +294,10 @@ func copyRemoteFile(sourceClient *sftp.Client, targetClient *sftp.Client, source
 }
 
 func copyRemoteDir(sourceClient *sftp.Client, targetClient *sftp.Client, sourcePath string, targetPath string) ([]TransferResult, []string, int64, error) {
-	if err := targetClient.MkdirAll(targetPath); err != nil {
+	if err := targetClient.Mkdir(targetPath); err != nil {
+		if os.IsExist(err) {
+			return nil, nil, 0, fmt.Errorf("%w: %s", ErrTargetExists, targetPath)
+		}
 		return nil, nil, 0, fmt.Errorf("create target directory %s: %w", targetPath, err)
 	}
 
@@ -300,6 +333,28 @@ func copyRemoteDir(sourceClient *sftp.Client, targetClient *sftp.Client, sourceP
 	}
 
 	return files, dirs, totalSize, nil
+}
+
+func uploadToNewPath(client *sftp.Client, remotePath string, source io.Reader) (int64, error) {
+	destination, err := client.OpenFile(remotePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
+	if err != nil {
+		if os.IsExist(err) {
+			return 0, fmt.Errorf("%w: %s", ErrTargetExists, remotePath)
+		}
+		return 0, fmt.Errorf("create remote file %s: %w", remotePath, err)
+	}
+
+	written, copyErr := io.Copy(destination, source)
+	closeErr := destination.Close()
+	if copyErr != nil {
+		_ = client.Remove(remotePath)
+		return 0, fmt.Errorf("copy to remote file %s: %w", remotePath, copyErr)
+	}
+	if closeErr != nil {
+		_ = client.Remove(remotePath)
+		return 0, fmt.Errorf("close remote file %s: %w", remotePath, closeErr)
+	}
+	return written, nil
 }
 
 func removeRemote(client *sftp.Client, remotePath string) error {

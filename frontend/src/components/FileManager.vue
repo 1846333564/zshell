@@ -19,6 +19,7 @@
         @change="commitPathDraft"
         @keydown.tab.prevent.stop="completePathDraft"
         @click.stop
+        @contextmenu.stop
       />
       <span class="hint">{{ statusText }}</span>
     </div>
@@ -79,37 +80,77 @@
     </div>
 
     <div v-if="connectionId" class="file-split" :class="{ 'nav-collapsed': navCollapsed }">
-      <aside v-if="!navCollapsed" class="path-navigator" @contextmenu.prevent.stop="openBlankContextMenu($event)">
+      <aside v-if="!navCollapsed" class="path-navigator">
         <div class="path-nav-head">
           <span>路径</span>
           <button class="path-nav-toggle" title="折叠导航" @click.stop="navCollapsed = true">‹</button>
         </div>
 
         <div
-          v-for="node in treeNodes"
-          :key="node.path"
-          class="path-node-row"
-          :class="{ active: node.path === currentPath, opened: node.opened }"
-          :style="{ paddingLeft: `${node.depth * 14 + 8}px` }"
+          ref="pathTreeViewport"
+          class="path-tree-viewport"
+          @scroll.passive="onTreeScroll"
+          @contextmenu.prevent.stop="openBlankContextMenu($event)"
         >
-          <button
-            class="path-node-main"
-            :class="{ active: node.path === currentPath, opened: node.opened }"
-            @click.stop="openDir(node.path)"
-            @contextmenu.prevent.stop="openPathContextMenu($event, node.path)"
+          <div
+            class="path-tree-virtual-space"
+            role="tree"
+            :style="{ height: `${treeVirtualHeight}px`, minWidth: `${treeContentWidth}px` }"
           >
-            <span class="node-label">{{ displayPath(node.path) }}</span>
-          </button>
-          <button
-            v-if="node.hasChildren"
-            class="node-toggle"
-            :title="node.collapsed ? '展开' : '折叠'"
-            @click.stop="togglePathNode(node.path)"
-            @contextmenu.prevent.stop="openPathContextMenu($event, node.path)"
-          >
-            {{ node.collapsed ? '▸' : '▾' }}
-          </button>
-          <span v-else class="node-toggle-spacer"></span>
+            <div
+              v-for="node in visibleTreeNodes"
+              :key="node.path"
+              class="path-node-row"
+              :class="{
+                active: node.path === treeSelectedPath,
+                opened: node.opened,
+              }"
+              :style="{
+                paddingLeft: `${node.depth * 14 + 8}px`,
+                transform: `translateY(${node.virtualIndex * treeRowHeight}px)`,
+              }"
+              role="treeitem"
+              tabindex="0"
+              :aria-expanded="node.hasChildren ? String(!node.collapsed) : undefined"
+              @click="activateTreeNode(node)"
+              @keydown.enter.prevent.stop="activateTreeNode(node)"
+              @keydown.space.prevent.stop="activateTreeNode(node)"
+              @contextmenu.prevent.stop="openPathContextMenu($event, node.path)"
+            >
+              <span class="node-toggle-slot" aria-hidden="true">
+                <ChevronIcon
+                  v-if="node.hasChildren"
+                  class="tree-chevron"
+                  :direction="node.collapsed ? 'right' : 'down'"
+                />
+              </span>
+              <div class="path-node-main" :class="{ opened: node.opened }">
+                <input
+                  v-if="renameState.surface === 'tree' && renameState.path === node.path"
+                  :ref="(element) => setRenameInputRef(element, node.path)"
+                  class="inline-rename-input tree-rename-input"
+                  :value="renameState.name"
+                  :disabled="renameState.saving"
+                  @input="updateRenameName"
+                  @click.stop
+                  @dblclick.stop
+                  @contextmenu.stop
+                  @keydown.enter.prevent.stop="commitRename"
+                  @keydown.escape.prevent.stop="cancelRename"
+                  @blur="commitRename"
+                />
+                <span
+                  v-else
+                  class="node-label"
+                  :data-tree-path="node.path"
+                  :class="{ active: node.path === treeSelectedPath, current: node.path === currentPath }"
+                  :title="node.path"
+                >
+                  {{ node.label }}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
       </aside>
 
@@ -139,7 +180,7 @@
           </button>
         </div>
 
-        <div class="file-list">
+        <div ref="fileListViewport" class="file-list" @scroll.passive="onFileListScroll">
           <div class="file-row file-row-head" :style="{ gridTemplateColumns }">
             <span
               v-for="column in columns"
@@ -149,29 +190,59 @@
             >
               <button class="file-head-button" type="button" @click.stop="changeSort(column.key)">
                 <span>{{ column.label }}</span>
-                <span class="sort-arrow">{{ sortArrow(column.key) }}</span>
+                <ChevronIcon
+                  v-if="sortState.key === column.key"
+                  class="sort-arrow"
+                  :direction="sortState.direction === 'asc' ? 'up' : 'down'"
+                />
               </button>
               <span class="column-resizer" @mousedown.prevent.stop="startColumnResize($event, column.key)"></span>
             </span>
           </div>
           <div
-            v-for="(entry, index) in orderedEntries"
-            :key="entry.path"
-            class="file-row"
-            :class="{ selected: isSelected(entry) }"
-            :style="{ gridTemplateColumns }"
-            draggable="true"
-            @click.stop="selectEntry(entry, index, $event)"
-            @dblclick.stop="openEntry(entry)"
-            @contextmenu.prevent.stop="openEntryContextMenu($event, entry, index)"
-            @dragstart="onRemoteDragStart($event, entry, index)"
+            v-if="orderedEntries.length"
+            class="file-list-virtual-space"
+            :style="{ height: `${fileVirtualHeight}px`, minWidth: `${fileContentWidth}px` }"
           >
-            <span class="name-cell" :class="{ dir: entry.isDir }">{{ entry.name }}</span>
-            <span>{{ entry.isDir ? '文件夹' : '文件' }}</span>
-            <span>{{ entry.isDir ? '-' : formatSize(entry.size) }}</span>
-            <span>{{ formatTime(entry.modTime) }}</span>
-            <span>{{ entry.mode || '-' }}</span>
-            <span>{{ entry.owner || '-' }}</span>
+            <div
+              v-for="item in visibleEntries"
+              :key="item.entry.path"
+              class="file-row file-row-virtual"
+              :data-entry-path="item.entry.path"
+              :class="{ selected: isSelected(item.entry), 'is-last': item.index === orderedEntries.length - 1 }"
+              :style="{
+                gridTemplateColumns,
+                transform: `translateY(${item.index * fileRowHeight}px)`,
+              }"
+              draggable="true"
+              @click.stop="selectEntry(item.entry, item.index, $event)"
+              @dblclick.stop="openEntry(item.entry)"
+              @contextmenu.prevent.stop="openEntryContextMenu($event, item.entry, item.index)"
+              @dragstart="onRemoteDragStart($event, item.entry, item.index)"
+            >
+              <span class="name-cell" :class="{ dir: item.entry.isDir }">
+                <input
+                  v-if="renameState.surface === 'list' && renameState.path === item.entry.path"
+                  :ref="(element) => setRenameInputRef(element, item.entry.path)"
+                  class="inline-rename-input"
+                  :value="renameState.name"
+                  :disabled="renameState.saving"
+                  @input="updateRenameName"
+                  @click.stop
+                  @dblclick.stop
+                  @contextmenu.stop
+                  @keydown.enter.prevent.stop="commitRename"
+                  @keydown.escape.prevent.stop="cancelRename"
+                  @blur="commitRename"
+                />
+                <template v-else>{{ item.entry.name }}</template>
+              </span>
+              <span>{{ item.entry.isDir ? '文件夹' : '文件' }}</span>
+              <span>{{ item.entry.isDir ? '-' : formatSize(item.entry.size) }}</span>
+              <span>{{ formatTime(item.entry.modTime) }}</span>
+              <span>{{ item.entry.mode || '-' }}</span>
+              <span>{{ item.entry.owner || '-' }}</span>
+            </div>
           </div>
           <div v-if="orderedEntries.length === 0" class="empty-tip">当前目录为空。</div>
         </div>
@@ -240,6 +311,7 @@
           :path="editorWindow.path"
           :append-chunks="editorWindow.contentChunks"
           :append-version="editorWindow.appendVersion"
+          :streaming="editorWindow.contentLoading"
           :disabled="editorWindow.contentLoading || editorWindow.editorRuntimeState === 'rendering' || editorWindow.saving"
           :active="editorWindow.id === activeEditorId"
           @focus="activateEditor(editorWindow.id)"
@@ -250,8 +322,7 @@
         <div
           v-if="
             editorWindow.contentLoading &&
-            editorWindow.windowState !== 'minimized' &&
-            (editorWindow.openProgress?.loadedBytes || 0) <= 0
+            editorWindow.windowState !== 'minimized'
           "
           class="remote-editor-open-progress"
         >
@@ -316,46 +387,63 @@
 
       <div
         v-if="contextMenu.visible"
+        ref="contextMenuElement"
         class="context-menu file-context-menu"
+        :data-context-kind="contextMenu.targetKind"
         :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
         @click.stop
         @contextmenu.prevent.stop
       >
-        <button :disabled="!connectionId || loading" @click="refreshFromMenu">刷新</button>
+        <template v-if="contextMenu.targetKind === 'directory'">
+          <button :disabled="loading || contextPath === currentPath" @click="openContextDirectory">打开</button>
+          <button :disabled="loading" @click="expandContextDirectory">展开目录树</button>
+          <button :disabled="!connectionId || loading" @click="refreshFromMenu">刷新</button>
 
-        <div class="context-menu-separator"></div>
-        <button v-if="contextCanOpenDirectory" :disabled="loading" @click="openContextDirectory">打开</button>
-        <template v-if="contextEntry && !contextEntry.isDir">
-          <button
-            v-for="action in fileOpenActions"
-            :key="action.key"
-            :disabled="loading"
-            @click="runContextFileOpenAction(action.key)"
-          >
-            {{ action.label }}
-          </button>
-          <button :disabled="loading" @click="downloadContextEntry">下载</button>
+          <div class="context-menu-separator"></div>
+          <button :disabled="loading" @click="downloadContextItem">下载文件夹</button>
+
+          <div class="context-menu-separator"></div>
+          <button :disabled="!connectionId || uploading" @click="chooseFilesFromMenu">上传文件到此处...</button>
+          <button :disabled="!connectionId || uploading" @click="chooseFolderFromMenu">上传文件夹到此处...</button>
+          <button :disabled="!canPaste || loading" @click="pasteClipboardFromMenu">粘贴到此处</button>
+
+          <div class="context-menu-separator"></div>
+          <button :disabled="!contextCanMutate || loading" @click="copySelectionFromMenu">复制</button>
+          <button class="danger" :disabled="!contextCanMutate || loading" @click="cutSelectionFromMenu">剪切</button>
+
+          <div class="context-menu-separator"></div>
+          <button :disabled="!contextCanMutate || loading" @click="startRenameFromMenu">重命名</button>
+          <button class="danger" :disabled="!canDeleteFromMenu || loading" @click="deleteFromMenu">删除</button>
+
+          <div class="context-menu-separator"></div>
+          <button :disabled="!contextPath" @click="copyPathFromMenu">复制路径</button>
         </template>
-        <button :disabled="!hasSelection || loading" @click="downloadSelectionFromMenu">下载选中</button>
-        <button class="danger" :disabled="!canDeleteFromMenu || loading" @click="deleteFromMenu">删除</button>
 
-        <div class="context-menu-separator"></div>
-        <button :disabled="!connectionId || uploading" @click="chooseFilesFromMenu">上传文件到此处...</button>
-        <button :disabled="!connectionId || uploading" @click="chooseFolderFromMenu">上传文件夹到此处...</button>
+        <template v-else>
+          <button :disabled="loading" @click="runContextFileOpenAction('textEdit')">编辑</button>
+          <button disabled title="后续版本提供">打开方式</button>
 
-        <div class="context-menu-separator"></div>
-        <button :disabled="!hasSelection" @click="copySelectionFromMenu">复制</button>
-        <button :disabled="!hasSelection" @click="cutSelectionFromMenu">剪切</button>
-        <button :disabled="!canPaste || loading" @click="pasteClipboardFromMenu">粘贴到此处</button>
+          <div class="context-menu-separator"></div>
+          <button :disabled="loading" @click="downloadContextItem">下载</button>
 
-        <div class="context-menu-separator"></div>
-        <button :disabled="!contextPath" @click="copyPathFromMenu">复制路径</button>
+          <div class="context-menu-separator"></div>
+          <button :disabled="loading" @click="copySelectionFromMenu">复制</button>
+          <button class="danger" :disabled="loading" @click="cutSelectionFromMenu">剪切</button>
+
+          <div class="context-menu-separator"></div>
+          <button :disabled="loading" @click="startRenameFromMenu">重命名</button>
+          <button class="danger" :disabled="loading" @click="deleteFromMenu">删除</button>
+
+          <div class="context-menu-separator"></div>
+          <button :disabled="!contextPath" @click="copyPathFromMenu">复制路径</button>
+        </template>
       </div>
     </Teleport>
   </div>
 </template>
 
 <script setup>
+import ChevronIcon from './ChevronIcon.vue';
 import RemoteCodeEditor from './RemoteCodeEditor.vue';
 import { useFileManager } from './useFileManager';
 
@@ -375,9 +463,11 @@ const props = defineProps({
 });
 
 const {
+  activateTreeNode,
   activateEditor,
   activeEditorId,
   breadcrumbs,
+  cancelRename,
   cancelEditorClosePrompt,
   canDeleteFromMenu,
   canPaste,
@@ -388,17 +478,21 @@ const {
   commitPathDraft,
   completePathDraft,
   contextCanOpenDirectory,
+  contextCanMutate,
   contextEntry,
   contextMenu,
+  contextMenuElement,
   contextPath,
   copyPathFromMenu,
   copySelectionFromMenu,
   currentPath,
+  commitRename,
   cutSelectionFromMenu,
   deleteFromMenu,
   discardEditorFromPrompt,
   displayPath,
   downloadContextEntry,
+  downloadContextItem,
   downloadSelectionFromMenu,
   dragOver,
   editorDirty,
@@ -409,9 +503,14 @@ const {
   editorTitle,
   editorWindowStyle,
   errorMessage,
+  expandContextDirectory,
   expandUploadPanel,
   fileInput,
+  fileContentWidth,
+  fileListViewport,
   fileOpenActions,
+  fileRowHeight,
+  fileVirtualHeight,
   folderInput,
   formatSize,
   formatTime,
@@ -427,11 +526,13 @@ const {
   onDragOver,
   onDropUpload,
   onFilePickerUpload,
+  onFileListScroll,
   onFolderPickerUpload,
   onPaneClick,
   onPathInput,
   onRemoteDragStart,
   onShellClick,
+  onTreeScroll,
   openBlankContextMenu,
   openContextDirectory,
   openDir,
@@ -447,29 +548,38 @@ const {
   pathHistoryListRef,
   pathHistoryOpen,
   pathHistoryStyle,
+  pathTreeViewport,
   refreshFromMenu,
+  renameState,
   requestEditorClose,
   runContextFileOpenAction,
   saveAndCloseEditorFromPrompt,
   saveEditor,
   saveEditorFromPrompt,
   selectEntry,
+  setRenameInputRef,
   setEditorRuntimeState,
-  sortArrow,
   sortPulseKey,
   sortState,
   startColumnResize,
   startEditorDrag,
+  startRenameFromMenu,
   statusText,
   toggleMaximizeEditor,
   togglePathHistory,
-  togglePathNode,
+  treeRowHeight,
+  treeSelectedPath,
   treeNodes,
+  treeContentWidth,
+  treeVirtualHeight,
   uploadDetail,
   uploadFilePercent,
   uploadPercent,
   uploadProgress,
   uploadTitle,
   uploading,
+  updateRenameName,
+  visibleEntries,
+  visibleTreeNodes,
 } = useFileManager(props);
 </script>

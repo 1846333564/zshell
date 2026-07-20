@@ -39,6 +39,7 @@ func WithCORS(next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Expose-Headers", "X-WiShell-File-Size, X-WiShell-File-Path, X-WiShell-File-Name, X-WiShell-File-Mod-Time")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

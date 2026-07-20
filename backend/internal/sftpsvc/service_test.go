@@ -2,6 +2,7 @@ package sftpsvc
 
 import (
 	"bytes"
+	"errors"
 	"slices"
 	"testing"
 )
@@ -229,10 +230,149 @@ func TestSameConnectionTransferCommand(t *testing.T) {
 	}
 
 	moveCommand := sameConnectionTransferCommand("move", "/home/source file.txt", "/home/target file.txt")
-	wantMove := "mv -f -- '/home/source file.txt' '/home/target file.txt'"
+	wantMove := "mv -nT -- '/home/source file.txt' '/home/target file.txt' && if [ -e '/home/source file.txt' ] || [ -L '/home/source file.txt' ]; then echo 'move refused because target exists' >&2; exit 1; fi"
 	if moveCommand != wantMove {
 		t.Fatalf("move command=%q, want %q", moveCommand, wantMove)
 	}
+}
+
+func TestValidateRenameName(t *testing.T) {
+	cases := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{name: "plain name", input: "renamed.txt"},
+		{name: "spaces in name", input: "renamed file.txt"},
+		{name: "dotfile", input: ".env"},
+		{name: "backslash is a valid POSIX name character", input: `name\part`},
+		{name: "empty", input: "", wantErr: true},
+		{name: "spaces only", input: "   ", wantErr: true},
+		{name: "dot", input: ".", wantErr: true},
+		{name: "dot dot", input: "..", wantErr: true},
+		{name: "slash", input: "nested/name", wantErr: true},
+		{name: "nul", input: "bad\x00name", wantErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateRenameName(tc.input)
+			if tc.wantErr {
+				if !errors.Is(err, ErrInvalidRenameName) {
+					t.Fatalf("validateRenameName(%q) error=%v, want ErrInvalidRenameName", tc.input, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("validateRenameName(%q) unexpected error: %v", tc.input, err)
+			}
+		})
+	}
+}
+
+func TestValidateRenameSourcePath(t *testing.T) {
+	cases := []struct {
+		name    string
+		input   string
+		wantErr error
+	}{
+		{name: "absolute item", input: "/opt/demo.txt"},
+		{name: "home child", input: "~/demo.txt"},
+		{name: "empty", input: "", wantErr: ErrInvalidRenamePath},
+		{name: "root", input: "/", wantErr: ErrProtectedRenamePath},
+		{name: "cleaned root", input: "/opt/..", wantErr: ErrProtectedRenamePath},
+		{name: "home", input: "~", wantErr: ErrProtectedRenamePath},
+		{name: "relative", input: "demo.txt", wantErr: ErrInvalidRenamePath},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateRenameSourcePath(tc.input)
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("validateRenameSourcePath(%q) error=%v, want %v", tc.input, err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("validateRenameSourcePath(%q) unexpected error: %v", tc.input, err)
+			}
+		})
+	}
+}
+
+func TestRenameTargetPathStaysInSourceParent(t *testing.T) {
+	got, err := renameTargetPath("/opt/app/old.txt", "new.txt")
+	if err != nil {
+		t.Fatalf("renameTargetPath returned error: %v", err)
+	}
+	if got != "/opt/app/new.txt" {
+		t.Fatalf("renameTargetPath=%q, want /opt/app/new.txt", got)
+	}
+	got, err = renameTargetPath("/opt/app/old ", "new ")
+	if err != nil {
+		t.Fatalf("renameTargetPath with trailing spaces returned error: %v", err)
+	}
+	if got != "/opt/app/new " {
+		t.Fatalf("renameTargetPath with trailing spaces=%q, want %q", got, "/opt/app/new ")
+	}
+
+	if _, err := renameTargetPath("/", "new-root"); !errors.Is(err, ErrProtectedRenamePath) {
+		t.Fatalf("root rename error=%v, want ErrProtectedRenamePath", err)
+	}
+	if _, err := renameTargetPath("/opt/app/old.txt", "nested/new.txt"); !errors.Is(err, ErrInvalidRenameName) {
+		t.Fatalf("nested rename error=%v, want ErrInvalidRenameName", err)
+	}
+}
+
+func TestEnsureMoveTargetAvailable(t *testing.T) {
+	t.Run("same source and target is no-op", func(t *testing.T) {
+		called := false
+		noOp, err := ensureMoveTargetAvailable("/opt/demo", "/opt/demo", true, func(string) (bool, error) {
+			called = true
+			return true, nil
+		})
+		if err != nil || !noOp || called {
+			t.Fatalf("noOp=%t called=%t err=%v, want true false nil", noOp, called, err)
+		}
+	})
+
+	t.Run("existing target is conflict", func(t *testing.T) {
+		noOp, err := ensureMoveTargetAvailable("/opt/source", "/srv/source", true, func(string) (bool, error) {
+			return true, nil
+		})
+		if noOp || !errors.Is(err, ErrTargetExists) {
+			t.Fatalf("noOp=%t err=%v, want conflict", noOp, err)
+		}
+	})
+
+	t.Run("same path on different connections is still checked", func(t *testing.T) {
+		noOp, err := ensureMoveTargetAvailable("/opt/source", "/opt/source", false, func(string) (bool, error) {
+			return true, nil
+		})
+		if noOp || !errors.Is(err, ErrTargetExists) {
+			t.Fatalf("noOp=%t err=%v, want conflict", noOp, err)
+		}
+	})
+
+	t.Run("missing target is available", func(t *testing.T) {
+		noOp, err := ensureMoveTargetAvailable("/opt/source", "/srv/source", true, func(string) (bool, error) {
+			return false, nil
+		})
+		if err != nil || noOp {
+			t.Fatalf("noOp=%t err=%v, want false nil", noOp, err)
+		}
+	})
+
+	t.Run("stat error is preserved", func(t *testing.T) {
+		statErr := errors.New("stat failed")
+		noOp, err := ensureMoveTargetAvailable("/opt/source", "/srv/source", true, func(string) (bool, error) {
+			return false, statErr
+		})
+		if noOp || !errors.Is(err, statErr) {
+			t.Fatalf("noOp=%t err=%v, want stat error", noOp, err)
+		}
+	})
 }
 
 func TestStreamTextFileContentReports32KiBChunks(t *testing.T) {

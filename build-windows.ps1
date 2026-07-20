@@ -1,3 +1,7 @@
+param(
+  [switch] $SkipGoTests
+)
+
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -49,7 +53,9 @@ Copy-Item -Path (Join-Path $frontendDist '*') -Destination $embeddedApp -Recurse
 
 Push-Location $backendDir
 try {
-  Invoke-Native 'go test ./...' { go test ./... }
+  if (-not $SkipGoTests) {
+    Invoke-Native 'go test ./...' { go test ./... }
+  }
   $wails = Join-Path $env:USERPROFILE 'go\bin\wails.exe'
   if (!(Test-Path -LiteralPath $wails)) {
     Invoke-Native 'go install Wails CLI' { go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0 }

@@ -6,8 +6,6 @@ function apiUrl(path) {
   return `${backendBase()}${path}`;
 }
 
-const STREAM_PARSE_YIELD_EVENTS = 4;
-
 async function requestJson(url, options) {
   const response = await fetch(apiUrl(url), {
     headers: {
@@ -180,140 +178,173 @@ export function listRemoteFiles(connectionId, path, options = {}) {
   });
 }
 
-export function readRemoteTextFile(connectionId, path) {
+export function readRemoteTextFile(connectionId, path, options = {}) {
   return requestJson('/api/sftp/file/read', {
     method: 'POST',
     body: JSON.stringify({ connectionId, path }),
+    signal: options.signal,
   });
 }
 
-export async function readRemoteTextFileWithProgress(connectionId, path, onProgress, options = {}) {
+export function readRemoteTextFileWithProgress(connectionId, path, onProgress, options = {}) {
   const canReportProgress = typeof onProgress === 'function';
   const canReportChunk = typeof options.onChunk === 'function';
   if (!canReportProgress && !canReportChunk) {
-    return readRemoteTextFile(connectionId, path);
+    return readRemoteTextFile(connectionId, path, options);
   }
 
-  try {
-    return await readRemoteTextFileStream(connectionId, path, onProgress, options);
-  } catch (error) {
-    if (error?.remoteReadError) {
-      throw error;
-    }
-    if (canReportProgress) {
-      onProgress({
-        stage: 'fallback',
-        message: '流式读取不可用，正在切换普通读取',
-      });
-    }
-    return readRemoteTextFile(connectionId, path);
-  }
+  return readRemoteTextFileRaw(connectionId, path, onProgress, options);
 }
 
-async function readRemoteTextFileStream(connectionId, path, onProgress, options = {}) {
-  const response = await fetch(apiUrl('/api/sftp/file/read/stream'), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ connectionId, path }),
-  });
-
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error(body.error || `read failed: ${response.status}`);
-  }
-  if (!response.body) {
-    return response.json();
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  const contentDecoder = new TextDecoder();
-  const contentParts = [];
+function readRemoteTextFileRaw(connectionId, path, onProgress, options = {}) {
   const collectContent = options.collectContent !== false;
-  let buffer = '';
-  let file = null;
-  let lastChunk = null;
-  let parsedEvents = 0;
+  const signal = options.signal;
 
-  const appendChunk = (chunk = {}) => {
-    lastChunk = chunk;
-    const bytes = decodeBase64Bytes(chunk.data);
-    if (bytes.length === 0) {
-      return;
-    }
-    const text = contentDecoder.decode(bytes, { stream: true });
-    if (!text) {
-      return;
-    }
-    if (collectContent) {
-      contentParts.push(text);
-    }
-    options.onChunk?.({ ...chunk, text });
-  };
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    let settled = false;
+    let lastLoadedBytes = 0;
+    let deliveredCharacters = 0;
 
-  const handleEvent = (event) => {
-    if (!event.type) {
-      return;
-    }
-    if (event.type === 'progress') {
-      onProgress?.(event.progress || {});
-      return;
-    }
-    if (event.type === 'chunk') {
-      appendChunk(event.chunk || {});
-      return;
-    }
-    if (event.type === 'error') {
-      throw remoteReadError(event.error || '读取远程文件失败');
-    }
-    if (event.type === 'result') {
-      file = event.file || {};
-    }
-  };
-
-  while (true) {
-    const { value, done } = await reader.read();
-    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
-    for (const line of lines) {
-      const event = parseJson(line.trim());
-      handleEvent(event);
-      parsedEvents += 1;
-      if (parsedEvents % STREAM_PARSE_YIELD_EVENTS === 0) {
-        await yieldToBrowser();
+    const cleanup = () => signal?.removeEventListener('abort', abortRequest);
+    const resolveOnce = (value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(value);
+    };
+    const rejectOnce = (error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const abortRequest = () => request.abort();
+    const emitProgress = (progress) => {
+      if (settled || typeof onProgress !== 'function') return true;
+      try {
+        onProgress(progress);
+        return true;
+      } catch (error) {
+        rejectOnce(error instanceof Error ? error : new Error('更新远程文件进度失败'));
+        request.abort();
+        return false;
       }
+    };
+    const responseTotal = () => Number(request.getResponseHeader('X-WiShell-File-Size')) || 0;
+    const responseMeta = () => ({
+      path: decodeTextResponseHeader(request.getResponseHeader('X-WiShell-File-Path')) || path,
+      name: decodeTextResponseHeader(request.getResponseHeader('X-WiShell-File-Name')) || remoteBaseName(path),
+      modTime: decodeTextResponseHeader(request.getResponseHeader('X-WiShell-File-Mod-Time')),
+    });
+    const emitAvailableText = (loadedBytes, totalBytes) => {
+      if (settled || typeof options.onChunk !== 'function') return;
+      if (request.status < 200 || request.status >= 300) return;
+      const responseText = request.responseText || '';
+      if (responseText.length <= deliveredCharacters) return;
+      const text = responseText.slice(deliveredCharacters);
+      deliveredCharacters = responseText.length;
+      const meta = responseMeta();
+      try {
+        options.onChunk({
+          ...meta,
+          fileName: meta.name,
+          loadedBytes,
+          totalBytes,
+          text,
+        });
+      } catch (error) {
+        rejectOnce(error instanceof Error ? error : new Error('增量显示远程文件失败'));
+        request.abort();
+      }
+    };
+
+    request.open('POST', apiUrl('/api/sftp/file/read/raw'), true);
+    request.responseType = 'text';
+    request.setRequestHeader('Content-Type', 'application/json');
+
+    request.onreadystatechange = () => {
+      if (request.readyState !== XMLHttpRequest.HEADERS_RECEIVED || settled) return;
+      const meta = responseMeta();
+      emitProgress({
+        stage: 'downloading',
+        path: meta.path,
+        fileName: meta.name,
+        loadedBytes: 0,
+        totalBytes: responseTotal(),
+        message: '正在下载远程文件内容',
+      });
+    };
+
+    request.onprogress = (event) => {
+      if (settled) return;
+      const meta = responseMeta();
+      lastLoadedBytes = Math.max(lastLoadedBytes, Number(event.loaded) || 0);
+      const totalBytes = event.lengthComputable ? Number(event.total) : responseTotal();
+      emitAvailableText(lastLoadedBytes, totalBytes);
+      if (settled) return;
+      emitProgress({
+        stage: 'downloading',
+        path: meta.path,
+        fileName: meta.name,
+        loadedBytes: lastLoadedBytes,
+        totalBytes,
+        message: '正在下载远程文件内容',
+      });
+    };
+
+    request.onload = (event) => {
+      if (request.status < 200 || request.status >= 300) {
+        const body = parseJson(request.responseText);
+        rejectOnce(remoteReadError(body.error || `read failed: ${request.status}`));
+        return;
+      }
+
+      const meta = responseMeta();
+      const expectedBytes = responseTotal();
+      const loadedBytes = Math.max(lastLoadedBytes, Number(event.loaded) || 0);
+      emitAvailableText(loadedBytes, expectedBytes);
+      if (settled) return;
+      if (loadedBytes !== expectedBytes) {
+        rejectOnce(remoteReadError(`远程文件读取不完整：应读取 ${expectedBytes} 字节，实际读取 ${loadedBytes} 字节`));
+        return;
+      }
+      const totalBytes = expectedBytes;
+      const content = request.responseText || '';
+      if (!emitProgress({
+        stage: 'done',
+        path: meta.path,
+        fileName: meta.name,
+        loadedBytes: totalBytes,
+        totalBytes,
+        message: '远程文件下载完成',
+      })) return;
+      resolveOnce({
+        file: {
+          ...meta,
+          size: totalBytes,
+          ...(collectContent ? { content } : {}),
+        },
+      });
+    };
+
+    request.onerror = () => {
+      rejectOnce(remoteReadError('读取远程文件时网络连接中断'));
+    };
+    request.ontimeout = () => {
+      rejectOnce(remoteReadError('读取远程文件超时'));
+    };
+    request.onabort = () => {
+      rejectOnce(abortError('已取消读取远程文件'));
+    };
+
+    if (signal?.aborted) {
+      rejectOnce(abortError('已取消读取远程文件'));
+      return;
     }
-
-    if (done) {
-      break;
-    }
-  }
-
-  if (buffer.trim()) {
-    const event = parseJson(buffer.trim());
-    handleEvent(event);
-  }
-
-  if (!file) {
-    throw new Error('远程文件读取没有返回内容');
-  }
-
-  const tail = contentDecoder.decode();
-  if (tail) {
-    if (collectContent) {
-      contentParts.push(tail);
-    }
-    options.onChunk?.({ ...(lastChunk || {}), text: tail });
-  }
-  if (collectContent && file.content == null) {
-    file.content = contentParts.join('');
-  }
-
-  return { file };
+    signal?.addEventListener('abort', abortRequest, { once: true });
+    request.send(JSON.stringify({ connectionId, path }));
+  });
 }
 
 export function saveRemoteTextFile(connectionId, path, content) {
@@ -486,6 +517,13 @@ export function transferRemoteItems(payload) {
   });
 }
 
+export function renameRemoteItem(connectionId, path, newName) {
+  return requestJson('/api/sftp/rename', {
+    method: 'POST',
+    body: JSON.stringify({ connectionId, path, newName }),
+  });
+}
+
 export function deleteRemoteItems(connectionId, items) {
   return requestJson('/api/sftp/delete', {
     method: 'POST',
@@ -501,23 +539,22 @@ function parseJson(value) {
   }
 }
 
-function decodeBase64Bytes(value) {
-  const binary = atob(value || '');
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
+function decodeTextResponseHeader(value) {
+  if (!value) return '';
+  try {
+    const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
+    const binary = atob(padded);
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return '';
   }
-  return bytes;
 }
 
-function yieldToBrowser() {
-  return new Promise((resolve) => {
-    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-      window.requestAnimationFrame(() => resolve());
-      return;
-    }
-    setTimeout(resolve, 0);
-  });
+function remoteBaseName(path) {
+  const parts = String(path || '').split('/').filter(Boolean);
+  return parts[parts.length - 1] || String(path || '');
 }
 
 function updateStoppedError(message) {
@@ -529,5 +566,11 @@ function updateStoppedError(message) {
 function remoteReadError(message) {
   const error = new Error(message || '读取远程文件失败');
   error.remoteReadError = true;
+  return error;
+}
+
+function abortError(message) {
+  const error = new Error(message || '操作已取消');
+  error.name = 'AbortError';
   return error;
 }

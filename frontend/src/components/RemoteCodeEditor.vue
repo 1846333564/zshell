@@ -1,12 +1,22 @@
 <template>
   <div class="remote-monaco-shell" @mousedown.stop @click.stop @keydown.stop>
-    <div v-show="!loadError" ref="editorMount" class="remote-monaco-mount"></div>
+    <div v-show="!streaming && !loadError" ref="editorMount" class="remote-monaco-mount"></div>
+    <pre
+      v-show="streaming"
+      ref="streamPreview"
+      class="remote-editor-stream-preview"
+      tabindex="0"
+      aria-label="远程文件下载预览"
+      aria-live="off"
+      @focus="emit('focus')"
+    ></pre>
     <textarea
-      v-show="loading || loadError"
+      v-show="!streaming && (loading || loadError)"
+      ref="fallbackTextarea"
       class="remote-editor-textarea remote-editor-fallback"
-      :value="fallbackContent"
-      :disabled="disabled"
+      :readonly="disabled"
       :spellcheck="false"
+      wrap="off"
       @input="handleFallbackInput"
       @keydown.ctrl.s.prevent="emit('save')"
       @keydown.meta.s.prevent="emit('save')"
@@ -44,18 +54,20 @@ const props = defineProps({
     type: Number,
     default: 0,
   },
+  streaming: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits(['update:modelValue', 'focus', 'save', 'state']);
 
-const EDITOR_APPEND_FRAME_CHARS = 32768;
-const EDITOR_APPEND_FRAME_CHUNKS = 1;
-
 const editorMount = ref(null);
+const streamPreview = ref(null);
+const fallbackTextarea = ref(null);
 const loading = ref(true);
 const loadError = ref('');
 const loadMessage = ref('准备加载编辑器...');
-const fallbackContent = ref('');
 
 let monacoApi = null;
 let monacoLoader = null;
@@ -68,17 +80,16 @@ let themeChangeHandler = null;
 let disposed = false;
 let applyingExternalValue = false;
 let appliedModelValue = '';
-let appliedModelLength = 0;
-let appendChunkIndex = 0;
-let appendFrame = null;
+let streamPreviewChunkIndex = 0;
 
 onMounted(() => {
+  syncFallbackValue(props.modelValue || '');
+  drainStreamPreviewChunks();
   initializeEditor();
 });
 
 onBeforeUnmount(() => {
   disposed = true;
-  cancelAppendFrame();
   resizeObserver?.disconnect();
   contentSubscription?.dispose();
   focusSubscription?.dispose();
@@ -93,47 +104,17 @@ watch(
   () => props.modelValue,
   (value) => {
     const nextValue = value || '';
-    if (!model) {
-      if (nextValue || !(props.appendChunks || []).length) {
-        fallbackContent.value = nextValue;
-        appliedModelValue = nextValue;
-        appliedModelLength = nextValue.length;
-        if (nextValue) {
-          appendChunkIndex = (props.appendChunks || []).length;
-        }
-      }
-      return;
-    }
-    applyingExternalValue = true;
-    try {
-      if (nextValue.length >= appliedModelLength && appendChunkIndex < (props.appendChunks || []).length) {
-        scheduleAppendChunks();
-        return;
-      }
-      const currentValue = appliedModelValue || model.getValue();
-      if (currentValue === nextValue) {
-        appliedModelValue = nextValue;
-        appliedModelLength = nextValue.length;
-        return;
-      }
-      if (nextValue.startsWith(currentValue)) {
-        appendModelText(nextValue.slice(currentValue.length));
-      } else {
-        model.setValue(nextValue);
-      }
-      appliedModelValue = nextValue;
-      appliedModelLength = nextValue.length;
-    } finally {
-      applyingExternalValue = false;
-    }
+    syncFallbackValue(nextValue);
+    syncModelValue(nextValue);
   },
 );
 
 watch(
   () => props.appendVersion,
   () => {
-    scheduleAppendChunks();
+    drainStreamPreviewChunks();
   },
+  { immediate: true, flush: 'sync' },
 );
 
 watch(
@@ -149,7 +130,7 @@ watch(
 watch(
   () => props.active,
   async (value) => {
-    if (!value || !editor) {
+    if (!value || !editor || props.streaming) {
       return;
     }
     await nextTick();
@@ -162,6 +143,34 @@ watch(
   () => props.path,
   () => {
     updateModelLanguage();
+  },
+);
+
+watch(
+  () => props.streaming,
+  async (streaming) => {
+    if (streaming) {
+      drainStreamPreviewChunks();
+      if (monacoApi && model) {
+        monacoApi.editor.setModelLanguage(model, 'plaintext');
+      }
+      return;
+    }
+
+    drainStreamPreviewChunks();
+    syncFallbackValue(props.modelValue || '');
+    syncModelValue(props.modelValue || '');
+    updateModelLanguage();
+    await nextTick();
+    if (disposed || props.streaming || !editor) {
+      return;
+    }
+    editor.layout();
+    editor.render(true);
+    if (props.active) {
+      editor.focus();
+    }
+    clearHiddenFallback();
   },
 );
 
@@ -181,17 +190,16 @@ async function initializeEditor() {
 
     updateLoadingState('创建编辑器实例 3/4', 0.78, 3);
     await nextTick();
-    if (!editorMount.value) {
+    if (disposed || !editorMount.value) {
       return;
     }
 
-    const language = monacoLoader.detectMonacoLanguage(monacoApi, props.path);
-    const hasStreamChunks = (props.appendChunks || []).length > 0;
-    appendChunkIndex = hasStreamChunks ? 0 : (props.appendChunks || []).length;
-    appliedModelValue = hasStreamChunks ? '' : props.modelValue || '';
-    appliedModelLength = appliedModelValue.length;
-    fallbackContent.value = appliedModelValue;
-    model = monacoApi.editor.createModel(appliedModelValue, language);
+    const language = props.streaming
+      ? 'plaintext'
+      : monacoLoader.detectMonacoLanguage(monacoApi, props.path);
+    const initialValue = props.streaming ? '' : props.modelValue || '';
+    appliedModelValue = initialValue;
+    model = monacoApi.editor.createModel(initialValue, language);
     editor = monacoApi.editor.create(editorMount.value, {
       model,
       theme: monacoLoader.MONACO_THEME,
@@ -228,8 +236,6 @@ async function initializeEditor() {
       }
       const nextValue = model.getValue();
       appliedModelValue = nextValue;
-      appliedModelLength = nextValue.length;
-      fallbackContent.value = nextValue;
       if (nextValue !== props.modelValue) {
         emit('update:modelValue', nextValue);
       }
@@ -244,10 +250,15 @@ async function initializeEditor() {
 
     loading.value = false;
     updateLoadingState('编辑器布局完成 4/4', 0.95, 4);
-    if (!scheduleAppendChunks()) {
-      emit('state', { status: 'ready', message: 'Monaco 已就绪' });
+    emit('state', { status: 'ready', message: 'Monaco 已就绪' });
+    if (!props.streaming) {
+      syncModelValue(props.modelValue || '');
+      await nextTick();
+      editor.layout();
+      editor.render(true);
+      clearHiddenFallback();
     }
-    if (props.active) {
+    if (props.active && !props.streaming) {
       editor.focus();
     }
   } catch (error) {
@@ -270,117 +281,92 @@ function updateLoadingState(message, progress, step) {
 }
 
 function updateModelLanguage() {
-  if (!monacoApi || !monacoLoader || !model) {
+  if (props.streaming || !monacoApi || !monacoLoader || !model) {
     return;
   }
   const language = monacoLoader.detectMonacoLanguage(monacoApi, props.path);
   monacoApi.editor.setModelLanguage(model, language);
 }
 
-function scheduleAppendChunks() {
-  if (appendFrame) {
-    return true;
-  }
-  if (appendChunkIndex >= (props.appendChunks || []).length) {
+function drainStreamPreviewChunks() {
+  const preview = streamPreview.value;
+  const chunks = props.appendChunks || [];
+  if (!preview || streamPreviewChunkIndex >= chunks.length) {
     return false;
   }
-  emitAppendState();
-  const run = () => {
-    appendFrame = null;
-    applyPendingAppendChunks();
-    if (appendChunkIndex < (props.appendChunks || []).length) {
-      scheduleAppendChunks();
-    } else if (!loading.value && !loadError.value) {
-      emit('state', { status: 'ready', message: 'Monaco 已就绪' });
+  const endIndex = chunks.length;
+  const parts = [];
+  for (let index = streamPreviewChunkIndex; index < endIndex; index += 1) {
+    const part = String(chunks[index] || '');
+    if (part) {
+      parts.push(part);
     }
-  };
-  if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-    appendFrame = window.requestAnimationFrame(run);
+  }
+  const text = parts.join('');
+  if (!text) {
+    streamPreviewChunkIndex = endIndex;
     return true;
   }
-  appendFrame = window.setTimeout(run, 16);
+
+  const scrollTop = preview.scrollTop;
+  const scrollLeft = preview.scrollLeft;
+  try {
+    preview.appendChild(document.createTextNode(text));
+  } catch {
+    return false;
+  }
+  preview.scrollTop = scrollTop;
+  preview.scrollLeft = scrollLeft;
+  streamPreviewChunkIndex = endIndex;
   return true;
 }
 
-function cancelAppendFrame() {
-  if (!appendFrame) {
+function syncFallbackValue(value) {
+  const textarea = fallbackTextarea.value;
+  if (!textarea || props.streaming) {
     return;
   }
-  if (typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
-    window.cancelAnimationFrame(appendFrame);
-  } else {
-    window.clearTimeout(appendFrame);
+  if (loading.value || loadError.value) {
+    textarea.value = value || '';
   }
-  appendFrame = null;
-}
-
-function applyPendingAppendChunks() {
-  const chunks = props.appendChunks || [];
-  if (appendChunkIndex >= chunks.length) {
-    return;
-  }
-  let text = '';
-  let chunkCount = 0;
-  while (
-    appendChunkIndex < chunks.length &&
-    chunkCount < EDITOR_APPEND_FRAME_CHUNKS &&
-    (text.length < EDITOR_APPEND_FRAME_CHARS || chunkCount === 0)
-  ) {
-    text += String(chunks[appendChunkIndex] || '');
-    appendChunkIndex += 1;
-    chunkCount += 1;
-  }
-  if (!text) {
-    return;
-  }
-  if (!model || loadError.value) {
-    fallbackContent.value += text;
-  }
-  applyingExternalValue = true;
-  try {
-    if (model) {
-      appendModelText(text);
-    }
-    appliedModelValue = '';
-    appliedModelLength += text.length;
-  } finally {
-    applyingExternalValue = false;
-  }
-  emitAppendState();
-}
-
-function emitAppendState() {
-  const total = (props.appendChunks || []).length;
-  if (loading.value || loadError.value || total <= 0 || appendChunkIndex >= total) {
-    return;
-  }
-  emit('state', {
-    status: 'rendering',
-    message: '渲染内容中',
-    progress: appendChunkIndex / total,
-  });
 }
 
 function handleFallbackInput(event) {
+  if (props.streaming || props.disabled) {
+    return;
+  }
   const value = event.target.value;
-  fallbackContent.value = value;
   appliedModelValue = value;
-  appliedModelLength = value.length;
   emit('update:modelValue', value);
 }
 
-function appendModelText(text) {
-  if (!text || !monacoApi || !model) {
+function syncModelValue(value) {
+  if (!model) {
     return;
   }
-  const line = model.getLineCount();
-  const column = model.getLineMaxColumn(line);
-  model.applyEdits([
-    {
-      range: new monacoApi.Range(line, column, line, column),
-      text,
-      forceMoveMarkers: true,
-    },
-  ]);
+  const nextValue = value || '';
+  if (appliedModelValue === nextValue && model.getValueLength() === nextValue.length) {
+    return;
+  }
+  applyingExternalValue = true;
+  try {
+    model.setValue(nextValue);
+    appliedModelValue = nextValue;
+    editor?.render(true);
+  } finally {
+    applyingExternalValue = false;
+  }
+}
+
+function clearHiddenFallback() {
+  if (props.streaming || loading.value || loadError.value) {
+    return;
+  }
+  if (fallbackTextarea.value) {
+    fallbackTextarea.value.value = '';
+  }
+  if (streamPreview.value) {
+    streamPreview.value.replaceChildren();
+  }
 }
 </script>

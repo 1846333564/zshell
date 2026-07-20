@@ -325,7 +325,8 @@
   cursor: not-allowed;
 }
 
-.remote-editor-textarea {
+.remote-editor-textarea,
+.remote-editor-stream-preview {
   width: 100%;
   min-width: 0;
   height: 100%;
@@ -341,8 +342,17 @@
   line-height: 1.55;
 }
 
-.remote-editor-textarea:disabled {
-  opacity: 0.72;
+.remote-editor-stream-preview {
+  margin: 0;
+  overflow: auto;
+  white-space: pre;
+  user-select: text;
+  cursor: text;
+  opacity: 0.92;
+}
+
+.remote-editor-textarea:read-only {
+  opacity: 0.92;
 }
 
 .remote-monaco-shell {
@@ -358,22 +368,22 @@
   grid-column: 1;
   z-index: 3;
   display: grid;
-  place-items: center;
-  padding: 18px;
-  background: rgba(var(--terminal-bg-rgb, 3, 10, 20), 0.58);
+  place-items: end end;
+  padding: 8px 12px;
+  background: transparent;
   pointer-events: none;
 }
 
 .remote-editor-open-card {
-  width: min(430px, 100%);
+  width: min(460px, 100%);
   display: grid;
-  gap: 8px;
-  padding: 13px;
+  gap: 5px;
+  padding: 8px 10px;
   border: 1px solid rgba(var(--line-rgb), 0.26);
   border-radius: 8px;
   color: var(--text);
-  background: rgba(var(--panel-rgb), 0.96);
-  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.36);
+  background: rgba(var(--panel-rgb), 0.92);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
 }
 
 .remote-editor-open-head,
