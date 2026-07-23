@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 import {
   PATH_COMPLETION_VISIBLE_LIMIT,
   findDirectoryCompletion,
@@ -14,6 +14,7 @@ export function usePathCompletion(options) {
   let lookupController = null;
   let lookupRevision = 0;
   let navigationDepth = 0;
+  let pathInputElement = null;
 
   const query = computed(() => {
     indexRevision.value;
@@ -97,7 +98,7 @@ export function usePathCompletion(options) {
     }
   }
 
-  async function navigate(path, trailingSlash) {
+  async function navigate(path, trailingSlash, restoreFocus = false) {
     if (!path) return;
     open.value = false;
     navigationDepth += 1;
@@ -109,7 +110,17 @@ export function usePathCompletion(options) {
         : finalPath;
     } finally {
       navigationDepth -= 1;
+      if (restoreFocus) await focusPathInput();
     }
+  }
+
+  async function focusPathInput() {
+    await nextTick();
+    const input = pathInputElement;
+    if (!input?.isConnected || input.disabled || typeof input.focus !== 'function') return;
+    input.focus({ preventScroll: true });
+    const end = String(input.value || '').length;
+    input.setSelectionRange?.(end, end);
   }
 
   async function commit(event) {
@@ -132,7 +143,7 @@ export function usePathCompletion(options) {
       }
       return;
     }
-    if (target) await navigate(target, true);
+    if (target) await navigate(target, true, event?.type === 'keydown');
   }
 
   async function complete() {
@@ -144,7 +155,7 @@ export function usePathCompletion(options) {
     if (!currentQuery?.fragment || currentCompletion.total === 0) return;
 
     if (currentCompletion.total === 1) {
-      await navigate(currentCompletion.items[0].path, true);
+      await navigate(currentCompletion.items[0].path, true, true);
       return;
     }
 
@@ -160,7 +171,7 @@ export function usePathCompletion(options) {
         1,
       );
       if (commonCompletion.exact?.path === completedPath) {
-        await navigate(completedPath, false);
+        await navigate(completedPath, false, true);
       } else {
         open.value = true;
       }
@@ -168,11 +179,12 @@ export function usePathCompletion(options) {
     }
 
     if (currentCompletion.exact && currentCompletion.soleLonger) {
-      await navigate(currentCompletion.soleLonger.path, true);
+      await navigate(currentCompletion.soleLonger.path, true, true);
     }
   }
 
   function onInput(event) {
+    pathInputElement = event.currentTarget || event.target || pathInputElement;
     options.pathDraft.value = event.target.value || '';
     options.onInput?.();
     open.value = Boolean(options.pathDraft.value.trim());
@@ -180,7 +192,7 @@ export function usePathCompletion(options) {
   }
 
   async function openItem(item) {
-    if (item?.path) await navigate(item.path, true);
+    if (item?.path) await navigate(item.path, true, true);
   }
 
   function dismiss() {
@@ -209,7 +221,10 @@ export function usePathCompletion(options) {
     openItem,
     dismiss,
     reset,
-    dispose: clearLookup,
+    dispose: () => {
+      clearLookup();
+      pathInputElement = null;
+    },
     notifyIndexChanged,
     itemLabel: (item) => (item?.name ? `/${item.name}` : ''),
     matches: (value) => {
