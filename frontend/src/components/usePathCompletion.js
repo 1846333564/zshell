@@ -13,6 +13,7 @@ export function usePathCompletion(options) {
   let lookupTimer = null;
   let lookupController = null;
   let lookupRevision = 0;
+  let navigationDepth = 0;
 
   const query = computed(() => {
     indexRevision.value;
@@ -99,14 +100,20 @@ export function usePathCompletion(options) {
   async function navigate(path, trailingSlash) {
     if (!path) return;
     open.value = false;
-    const resolvedPath = await options.navigate(path);
-    const finalPath = resolvedPath || path;
-    options.pathDraft.value = trailingSlash
-      ? withTrailingDirectorySlash(finalPath)
-      : finalPath;
+    navigationDepth += 1;
+    try {
+      const resolvedPath = await options.navigate(path);
+      const finalPath = resolvedPath || path;
+      options.pathDraft.value = trailingSlash
+        ? withTrailingDirectorySlash(finalPath)
+        : finalPath;
+    } finally {
+      navigationDepth -= 1;
+    }
   }
 
   async function commit(event) {
+    if (event?.type === 'change' && navigationDepth > 0) return;
     if (!options.connectionId()) return;
     const draft = options.pathDraft.value.trim();
     if (!draft) {
